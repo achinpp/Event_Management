@@ -16,6 +16,21 @@ interface Post {
   scheduled_at: string | null;
 }
 
+interface PlannedPost {
+  label: string;
+  type: string;
+  goal: string;
+  publishWindow: string;
+  caption: string;
+  hashtags: string[];
+  imageBrief: string;
+}
+
+interface CampaignPlan {
+  campaignSummary: string;
+  postSequence: PlannedPost[];
+}
+
 interface EventDetail {
   event: {
     id: string;
@@ -24,6 +39,7 @@ interface EventDetail {
     starts_at: string | null;
     venue: string | null;
     status: string;
+    breakdown?: CampaignPlan | null;
   };
   posts: Post[];
   registrations: Array<{
@@ -43,6 +59,7 @@ export default function Workspace({ eventId }: { eventId: string }) {
     refreshInterval: 2000,
   });
   const [generating, setGenerating] = useState(false);
+  const [busyImageIndex, setBusyImageIndex] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [selectedImage, setSelectedImage] = useState<number | null>(null);
   const [selectedCaption, setSelectedCaption] = useState<number | null>(null);
@@ -55,6 +72,7 @@ export default function Workspace({ eventId }: { eventId: string }) {
   }
 
   const { event, posts } = data;
+  const campaignPlan = event.breakdown;
   const chosen = posts.find((p) => p.final_caption !== null) ?? null;
   const generatingRows = posts.some((p) => p.image_url === null);
 
@@ -102,6 +120,28 @@ export default function Workspace({ eventId }: { eventId: string }) {
     mutate();
   }
 
+  async function generateImageForPost(postIndex: number) {
+    if (!campaignPlan?.postSequence?.[postIndex]) return;
+    const post = posts[postIndex];
+    if (!post) return;
+    setBusyImageIndex(postIndex);
+    setError(null);
+
+    const res = await fetch(`/api/posts/${post.id}/generate-image`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ imageBrief: campaignPlan.postSequence[postIndex].imageBrief }),
+    });
+
+    if (!res.ok) {
+      const payload = await res.json().catch(() => null);
+      setError(payload?.error ?? "Image generation failed");
+    }
+
+    setBusyImageIndex(null);
+    mutate();
+  }
+
   return (
     <main className="mx-auto w-full max-w-5xl flex-1 px-6 py-10">
       <Link href="/admin" className="text-sm opacity-60 hover:opacity-100">
@@ -133,8 +173,46 @@ export default function Workspace({ eventId }: { eventId: string }) {
 
       {posts.length === 0 && !generating && (
         <p className="mt-10 text-sm opacity-70">
-          No campaign yet — hit Generate to create 3 image and caption variants.
+          No campaign yet — hit Generate to create your event campaign.
         </p>
+      )}
+
+      {campaignPlan && (
+        <section className="mt-8 rounded-xl border border-neutral-300 p-5 dark:border-neutral-700">
+          <h2 className="font-semibold">Campaign plan</h2>
+          <p className="mt-2 text-sm text-neutral-700 dark:text-neutral-300">
+            {campaignPlan.campaignSummary}
+          </p>
+          <div className="mt-4 grid gap-4 sm:grid-cols-3">
+            {campaignPlan.postSequence.map((post, index) => (
+              <div
+                key={post.type}
+                className="rounded-xl border border-neutral-200 p-4 text-sm dark:border-neutral-700"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <p className="font-semibold">{post.label}</p>
+                  <span className="rounded-full bg-blue-500/10 px-2 py-0.5 text-xs text-blue-700">
+                    {post.publishWindow}
+                  </span>
+                </div>
+                <p className="mt-2 text-xs opacity-80">{post.goal}</p>
+                <p className="mt-3 text-sm">{post.caption}</p>
+                <p className="mt-2 text-xs text-blue-500">
+                  {post.hashtags.join(" ")}
+                </p>
+                <p className="mt-3 text-xs opacity-70">Image brief:</p>
+                <p className="mt-1 text-xs opacity-80">{post.imageBrief}</p>
+                <button
+                  onClick={() => generateImageForPost(index)}
+                  disabled={busyImageIndex !== null}
+                  className="mt-4 w-full rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white disabled:opacity-50"
+                >
+                  {busyImageIndex === index ? "Generating image…" : "Generate image"}
+                </button>
+              </div>
+            ))}
+          </div>
+        </section>
       )}
 
       {posts.length > 0 && (

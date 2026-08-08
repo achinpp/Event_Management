@@ -2,29 +2,45 @@
 // must round-trip with ZERO Gemini calls. Placeholder gradients live in
 // public/demo until phase 6 swaps in the best real generations.
 
-export const demoBreakdown = [
-  { label: "audience", detail: "Students, developers, and startup founders" },
-  { label: "hook", detail: "Hands-on workshops and a startup showcase" },
-  { label: "logistics", detail: "Free entry for students, lunch provided, on-site parking" },
-];
-
-export const demoVariants = [
-  {
-    caption:
-      "The future builds itself? Not quite — come build it with us. One day, 12 speakers, 4 hands-on workshops.",
-    hashtags: ["#TechEvent", "#AI", "#Robotics", "#Innovation"],
-  },
-  {
-    caption:
-      "Students attend FREE. Lunch is on us. The only thing you need to bring is curiosity.",
-    hashtags: ["#StudentLife", "#FreeEvent", "#TechCommunity"],
-  },
-  {
-    caption:
-      "12 speakers. 4 workshops. 1 startup showcase. 0 reasons to miss it.",
-    hashtags: ["#Startup", "#TechSummit", "#Networking"],
-  },
-];
+export const demoCampaignPlan = {
+  campaignSummary:
+    "A three-step social campaign to build excitement, open registration, and drive last-minute signups for the event.",
+  postSequence: [
+    {
+      type: "coming_soon",
+      label: "Coming Soon",
+      goal: "Announce the event and build awareness.",
+      publishWindow: "2 weeks before",
+      caption:
+        "AI Summit Colombo is coming soon! Join expert speakers, hands-on workshops, and startup networking.",
+      hashtags: ["#AISummit", "#Colombo", "#TechEvent"],
+      imageBrief:
+        "A bold announcement graphic with AI visuals, conference stage, and Colombo skyline.",
+    },
+    {
+      type: "registration_open",
+      label: "Registration Open",
+      goal: "Drive ticket signups and highlight event benefits.",
+      publishWindow: "10 days before",
+      caption:
+        "Registration is open for AI Summit Colombo. Save your seat for expert talks, workshops, and networking.",
+      hashtags: ["#RegisterNow", "#AIConference", "#Networking"],
+      imageBrief:
+        "A vibrant signup graphic with people networking and workshop icons.",
+    },
+    {
+      type: "registration_close",
+      label: "Last Chance",
+      goal: "Create urgency before registration closes.",
+      publishWindow: "2 days before",
+      caption:
+        "Last chance to register for AI Summit Colombo. Don’t miss practical sessions and startup demos.",
+      hashtags: ["#LastChance", "#AISummit", "#FinalCall"],
+      imageBrief:
+        "A countdown-style urgent post with event highlights and a CTA.",
+    },
+  ],
+};
 
 // Served from the public Supabase bucket so Buffer can fetch them by URL
 // (/rules #9) — localhost URLs would fail asset fetch. The same PNGs also

@@ -3,33 +3,31 @@ import { z } from "zod";
 import { google } from "@ai-sdk/google";
 import { generateObject } from "ai";
 import { supabaseAdmin } from "@/lib/supabase";
-import { generateImage, fetchLogoInline, InlineImage } from "@/lib/gemini-image";
-import { demoBreakdown, demoVariants, demoImageUrl } from "@/lib/demo";
+import { demoCampaignPlan, demoImageUrl } from "@/lib/demo";
 
 export const maxDuration = 300;
 export const runtime = "nodejs";
 
-// Pinned gemini-3-flash 404s — see /decisions-log in CLAUDE.md.
-const TEXT_MODEL = "gemini-3-flash-preview";
+// Using gemini-3.1-flash-lite for the campaign orchestrator
+const TEXT_MODEL = "gemini-3.1-flash-lite";
 const VARIANTS = [0, 1, 2] as const;
 
-const briefsSchema = z.object({
-  breakdown: z
-    .array(z.object({ label: z.string(), detail: z.string() }))
-    .describe("key marketing angles extracted from the event"),
-  imageBriefs: z
-    .array(z.string())
-    .length(3)
-    .describe("3 distinct visual briefs for square social media images"),
-  captionBriefs: z
-    .array(z.string())
-    .length(3)
-    .describe("3 distinct angles for social media captions"),
+const plannedPostSchema = z.object({
+  type: z.string().describe("post phase identifier, e.g. coming_soon"),
+  label: z.string().describe("human-friendly post label"),
+  goal: z.string().describe("the marketing objective for this post"),
+  publishWindow: z.string().describe("suggested publish timing"),
+  caption: z.string().describe("social media caption copy"),
+  hashtags: z.array(z.string()).min(1).max(10).describe("hashtags with # prefix"),
+  imageBrief: z.string().describe("brief for the post image creative"),
 });
 
-const captionSchema = z.object({
-  caption: z.string().describe("social media caption, 1-3 sentences, no hashtags"),
-  hashtags: z.array(z.string()).min(3).max(6).describe("hashtags with # prefix"),
+const campaignPlanSchema = z.object({
+  campaignSummary: z.string().describe("overall campaign strategy summary"),
+  postSequence: z
+    .array(plannedPostSchema)
+    .length(3)
+    .describe("three ordered planned campaign posts"),
 });
 
 interface EventRow {
@@ -77,6 +75,7 @@ export async function POST(req: Request) {
       image_url: null,
       caption: null,
       hashtags: [],
+      final_caption: null,
       status: "draft",
     })),
     { onConflict: "event_id,variant_index" }
@@ -87,90 +86,50 @@ export async function POST(req: Request) {
 
   if (process.env.DEMO_MODE === "true") {
     // /rules #10 + /verify #8: zero Gemini calls in demo mode.
-    await db.from("events").update({ breakdown: demoBreakdown }).eq("id", eventId);
+    await db.from("events").update({ breakdown: demoCampaignPlan }).eq("id", eventId);
     for (const i of VARIANTS) {
       await db
         .from("generated_posts")
-        .update({
-          image_url: demoImageUrl(i),
-          caption: demoVariants[i].caption,
-          hashtags: demoVariants[i].hashtags,
-        })
-        .eq("event_id", eventId)
-        .eq("variant_index", i);
+        .upsert(
+          {
+            event_id: eventId,
+            variant_index: i,
+            image_url: demoImageUrl(i),
+            caption: demoCampaignPlan.postSequence[i].caption,
+            hashtags: demoCampaignPlan.postSequence[i].hashtags,
+            final_caption: null,
+            status: "draft",
+          },
+          { onConflict: "event_id,variant_index" }
+        );
     }
     return finishedPosts(eventId);
   }
 
-  // One structured call → breakdown + 3 image briefs + 3 caption briefs.
-  const { object: briefs } = await generateObject({
+  const { object: campaignPlan } = await generateObject({
     model: google(TEXT_MODEL),
-    schema: briefsSchema,
-    prompt: `You are a social media marketer for events. Break down this event into
-its key marketing angles, then write 3 distinct briefs for square promotional
-images and 3 distinct briefs for captions. Vary tone and audience across the
-three variants (e.g. professional, playful, urgency/FOMO).
+    schema: campaignPlanSchema,
+    prompt: `You are a social media campaign designer for events. Read the event details below and create a short campaign with three social media posts. For each post, choose a phase, a clear goal, a suggested publish timing, caption copy, hashtags, and an image creative brief.
 
 ${eventFacts(event)}`,
   });
 
-  await db.from("events").update({ breakdown: briefs.breakdown }).eq("id", eventId);
+  await db.from("events").update({ breakdown: campaignPlan }).eq("id", eventId);
 
-  let logo: InlineImage | undefined;
-  if (event.logo_url) {
-    logo = await fetchLogoInline(event.logo_url).catch(() => undefined);
-  }
-
-  // Fan out: 3 images + 3 captions in parallel.
-  const imageTasks = briefs.imageBriefs.map(async (brief, i) => {
-    const image = await generateImage(
-      `Square social media promotional image for an event.
-Brief: ${brief}
-Event: ${event.title}${event.venue ? `, ${event.venue}` : ""}
-Style: modern, eye-catching, suitable for Instagram. ${
-        logo ? "Incorporate the attached logo tastefully." : ""
-      }`,
-      logo
-    );
-    const path = `${eventId}/${i}-${Date.now()}.png`;
-    const { error } = await db.storage
-      .from("posts")
-      .upload(path, image.bytes, { contentType: image.mimeType, upsert: true });
-    if (error) throw new Error(`storage upload failed: ${error.message}`);
-    return db.storage.from("posts").getPublicUrl(path).data.publicUrl;
-  });
-
-  const captionTasks = briefs.captionBriefs.map(async (brief) => {
-    const { object } = await generateObject({
-      model: google(TEXT_MODEL),
-      schema: captionSchema,
-      prompt: `Write one social media caption for this event.
-Brief: ${brief}
-
-${eventFacts(event)}`,
-    });
-    return object;
-  });
-
-  const results = await Promise.all([
-    Promise.all(imageTasks),
-    Promise.all(captionTasks),
-  ]);
-  const [imageUrls, captions] = results;
-
-  for (const i of VARIANTS) {
-    const { error } = await db
-      .from("generated_posts")
-      .update({
-        image_url: imageUrls[i],
-        caption: captions[i].caption,
-        hashtags: captions[i].hashtags,
-      })
-      .eq("event_id", eventId)
-      .eq("variant_index", i);
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
-    }
+  const { error: upsertError } = await db.from("generated_posts").upsert(
+    campaignPlan.postSequence.map((post, i) => ({
+      event_id: eventId,
+      variant_index: i,
+      image_url: null,
+      caption: post.caption,
+      hashtags: post.hashtags,
+      final_caption: null,
+      status: "draft",
+    })),
+    { onConflict: "event_id,variant_index" }
+  );
+  if (upsertError) {
+    return NextResponse.json({ error: upsertError.message }, { status: 500 });
   }
 
   return finishedPosts(eventId);
