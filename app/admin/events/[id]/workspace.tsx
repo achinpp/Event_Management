@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 /* eslint-disable @next/next/no-img-element -- generated/remote images, no next/image optimization needed */
 import useSWR from "swr";
 
@@ -39,10 +40,12 @@ interface EventDetail {
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
 export default function Workspace({ eventId }: { eventId: string }) {
+  const router = useRouter();
   const { data, mutate } = useSWR<EventDetail>(`/api/events/${eventId}`, fetcher, {
     refreshInterval: 2000,
   });
   const [generating, setGenerating] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedImage, setSelectedImage] = useState<number | null>(null);
   const [selectedCaption, setSelectedCaption] = useState<number | null>(null);
@@ -57,6 +60,27 @@ export default function Workspace({ eventId }: { eventId: string }) {
   const { event, posts } = data;
   const chosen = posts.find((p) => p.final_caption !== null) ?? null;
   const generatingRows = posts.some((p) => p.image_url === null);
+
+  async function deleteThisEvent() {
+    if (!confirm(`Are you sure you want to delete "${event.title}"? This cannot be undone.`)) {
+      return;
+    }
+    setDeleting(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/events/${eventId}`, { method: "DELETE" });
+      if (res.ok) {
+        router.push("/admin");
+      } else {
+        const json = await res.json().catch(() => null);
+        setError(json?.error ?? "Failed to delete event");
+        setDeleting(false);
+      }
+    } catch {
+      setError("Failed to delete event");
+      setDeleting(false);
+    }
+  }
 
   async function generate() {
     setGenerating(true);
@@ -104,9 +128,18 @@ export default function Workspace({ eventId }: { eventId: string }) {
 
   return (
     <main className="mx-auto w-full max-w-5xl flex-1 px-6 py-10">
-      <Link href="/admin" className="text-sm opacity-60 hover:opacity-100">
-        ← All events
-      </Link>
+      <div className="flex items-center justify-between">
+        <Link href="/admin" className="text-sm opacity-60 hover:opacity-100">
+          ← All events
+        </Link>
+        <button
+          onClick={deleteThisEvent}
+          disabled={deleting}
+          className="rounded-lg border border-red-500/30 px-3 py-1 text-xs font-semibold text-red-500 hover:bg-red-500/10 disabled:opacity-40"
+        >
+          {deleting ? "Deleting…" : "Delete event"}
+        </button>
+      </div>
       <div className="mt-2 flex flex-wrap items-end justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold">{event.title}</h1>

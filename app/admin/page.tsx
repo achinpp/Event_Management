@@ -54,6 +54,28 @@ export default function AdminPage() {
     router.push(`/admin/events/${json.event.id}`);
   }
 
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  async function deleteEvent(e: React.MouseEvent, id: string, title: string) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!confirm(`Are you sure you want to delete "${title}"? This cannot be undone.`)) {
+      return;
+    }
+    setDeletingId(id);
+    try {
+      const res = await fetch(`/api/events/${id}`, { method: "DELETE" });
+      if (res.ok) {
+        mutate();
+      } else {
+        const json = await res.json().catch(() => null);
+        alert(json?.error ?? "Failed to delete event");
+      }
+    } finally {
+      setDeletingId(null);
+    }
+  }
+
   return (
     <main className="mx-auto w-full max-w-3xl flex-1 px-6 py-10">
       <h1 className="text-2xl font-bold">EventPilot</h1>
@@ -132,11 +154,22 @@ export default function AdminPage() {
                     {event.venue ?? ""}
                   </span>
                 </span>
-                <span className="text-xs opacity-60">
-                  {event.starts_at
-                    ? new Date(event.starts_at).toLocaleDateString()
-                    : "no date"}
-                </span>
+                <div className="flex items-center gap-3">
+                  <span className="text-xs opacity-60">
+                    {event.starts_at
+                      ? new Date(event.starts_at).toLocaleDateString()
+                      : "no date"}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={(e) => deleteEvent(e, event.id, event.title)}
+                    disabled={deletingId === event.id}
+                    className="rounded-md p-1 text-xs text-red-500 opacity-60 hover:bg-red-500/10 hover:opacity-100 disabled:opacity-30"
+                    title="Delete event"
+                  >
+                    {deletingId === event.id ? "Deleting…" : "Delete"}
+                  </button>
+                </div>
               </Link>
             </li>
           ))}
