@@ -353,3 +353,14 @@ curl -s -X POST localhost:3000/api/generate -H 'content-type: application/json' 
 ## /decisions-log
 
 (append model-ID or endpoint changes here with date + reason)
+
+- 2026-08-08: text model `gemini-3-flash` → `gemini-3-flash-preview`. The
+  pinned ID 404s on v1beta generateContent; ListModels shows only the
+  -preview variant exists. Closest free-tier flash lane to the pinned ID.
+- 2026-08-08: image generation has NO free-tier quota on this API key —
+  `gemini-2.5-flash-image` and every 3.1-flash image variant all 429 with
+  `free_tier limit: 0`. The "free-tier lane" assumption in /rules #6 no
+  longer holds. Until billing is enabled on the key, run with
+  `DEMO_MODE=true` (phase 2 gate was verified in demo mode; the real text
+  pipeline — breakdown + captions via gemini-3-flash-preview — works on the
+  free tier and was verified live).
