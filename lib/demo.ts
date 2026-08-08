@@ -26,7 +26,11 @@ export const demoVariants = [
   },
 ];
 
+// Served from the public Supabase bucket so Buffer can fetch them by URL
+// (/rules #9) — localhost URLs would fail asset fetch. The same PNGs also
+// live in public/demo as a local reserve.
 export function demoImageUrl(variantIndex: number): string {
-  const base = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
-  return `${base}/demo/demo-${variantIndex}.png`;
+  const base = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  if (!base) throw new Error("NEXT_PUBLIC_SUPABASE_URL is not set");
+  return `${base}/storage/v1/object/public/posts/demo/demo-${variantIndex}.png`;
 }

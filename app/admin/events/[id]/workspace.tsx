@@ -31,6 +31,8 @@ interface EventDetail {
     full_name: string | null;
     email: string | null;
     rsvp_status: string;
+    rsvp_at: string | null;
+    chat_token: string;
   }>;
 }
 
@@ -216,13 +218,87 @@ export default function Workspace({ eventId }: { eventId: string }) {
         </>
       )}
 
-      <section className="mt-10 border-t border-neutral-300 pt-6 dark:border-neutral-700">
-        <h2 className="font-semibold">Registrations</h2>
-        <p className="mt-2 text-sm opacity-60">
-          {data.registrations.length} so far — live table lands in phase 5.
-        </p>
-      </section>
+      <RegistrationsTable registrations={data.registrations} />
     </main>
+  );
+}
+
+const RSVP_STYLES: Record<string, string> = {
+  confirmed: "bg-green-500/15 text-green-600 dark:text-green-400",
+  declined: "bg-red-500/15 text-red-600 dark:text-red-400",
+  pending: "bg-neutral-500/15 opacity-80",
+};
+
+function RegistrationsTable({
+  registrations,
+}: {
+  registrations: EventDetail["registrations"];
+}) {
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  async function copyLink(reg: EventDetail["registrations"][number]) {
+    await navigator.clipboard.writeText(
+      `${window.location.origin}/chat/${reg.chat_token}`
+    );
+    setCopiedId(reg.id);
+    setTimeout(() => setCopiedId(null), 1500);
+  }
+
+  return (
+    <section className="mt-10 border-t border-neutral-300 pt-6 dark:border-neutral-700">
+      <h2 className="font-semibold">
+        Registrations{" "}
+        <span className="text-sm font-normal opacity-60">
+          {registrations.length} · live, updates every 2s
+        </span>
+      </h2>
+      {registrations.length === 0 ? (
+        <p className="mt-2 text-sm opacity-60">
+          No registrations yet — share the Google Form to collect them.
+        </p>
+      ) : (
+        <div className="mt-3 overflow-x-auto">
+          <table className="w-full text-left text-sm">
+            <thead>
+              <tr className="border-b border-neutral-300 text-xs uppercase opacity-60 dark:border-neutral-700">
+                <th className="py-2 pr-4">Name</th>
+                <th className="py-2 pr-4">Email</th>
+                <th className="py-2 pr-4">RSVP</th>
+                <th className="py-2">Chat link</th>
+              </tr>
+            </thead>
+            <tbody>
+              {registrations.map((reg) => (
+                <tr
+                  key={reg.id}
+                  className="border-b border-neutral-200 dark:border-neutral-800"
+                >
+                  <td className="py-2 pr-4">{reg.full_name ?? "—"}</td>
+                  <td className="py-2 pr-4 opacity-80">{reg.email ?? "—"}</td>
+                  <td className="py-2 pr-4">
+                    <span
+                      className={`rounded-full px-2 py-0.5 text-xs font-medium ${
+                        RSVP_STYLES[reg.rsvp_status] ?? RSVP_STYLES.pending
+                      }`}
+                    >
+                      {reg.rsvp_status}
+                    </span>
+                  </td>
+                  <td className="py-2">
+                    <button
+                      onClick={() => copyLink(reg)}
+                      className="rounded-md border border-neutral-300 px-2 py-1 text-xs hover:border-blue-500 dark:border-neutral-700"
+                    >
+                      {copiedId === reg.id ? "Copied!" : "Copy link"}
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
   );
 }
 
