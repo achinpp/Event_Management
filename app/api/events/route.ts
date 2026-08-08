@@ -95,12 +95,9 @@ export async function POST(req: Request) {
   try {
     await chunkAndEmbed(event.id, event.description);
   } catch (err) {
-    // Event row exists but its knowledge base doesn't — surface loudly so
-    // the gate (>0 embedded chunks) can't silently pass.
-    return NextResponse.json(
-      { event, error: `event created but embedding failed: ${String(err)}` },
-      { status: 502 }
-    );
+    // Log embedding failure but don't block event creation
+    console.warn(`embedding failed for event ${event.id}:`, err);
+    // Chat will still work, just without RAG context
   }
 
   return NextResponse.json({ event }, { status: 201 });

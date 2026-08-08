@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@ai-sdk/google": "^3.0.104",
+    "@openrouter/sdk": "^1.2.17",
     "@supabase/supabase-js": "^2.109.0",
     "@tailwindcss/oxide-linux-x64-gnu": "^4.3.3",
     "ai": "^6.0.246",

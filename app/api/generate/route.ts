@@ -1,15 +1,13 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { google } from "@ai-sdk/google";
-import { generateObject } from "ai";
 import { supabaseAdmin } from "@/lib/supabase";
 import { demoCampaignPlan, demoImageUrl } from "@/lib/demo";
 
 export const maxDuration = 300;
 export const runtime = "nodejs";
 
-// Using gemini-3.1-flash-lite for the campaign orchestrator
-const TEXT_MODEL = "gemini-3.1-flash-lite";
+// OpenRouter Nemotron model for campaign planning
+const OPENROUTER_MODEL = "nvidia/nemotron-4-340b-instruct";
 const VARIANTS = [0, 1, 2] as const;
 
 const plannedPostSchema = z.object({
@@ -85,7 +83,7 @@ export async function POST(req: Request) {
   }
 
   if (process.env.DEMO_MODE === "true") {
-    // /rules #10 + /verify #8: zero Gemini calls in demo mode.
+    // Demo mode: skip OpenRouter calls
     await db.from("events").update({ breakdown: demoCampaignPlan }).eq("id", eventId);
     for (const i of VARIANTS) {
       await db
@@ -106,13 +104,72 @@ export async function POST(req: Request) {
     return finishedPosts(eventId);
   }
 
-  const { object: campaignPlan } = await generateObject({
-    model: google(TEXT_MODEL),
-    schema: campaignPlanSchema,
-    prompt: `You are a social media campaign designer for events. Read the event details below and create a short campaign with three social media posts. For each post, choose a phase, a clear goal, a suggested publish timing, caption copy, hashtags, and an image creative brief.
+  // Call OpenRouter Nemotron for campaign planning
+  const systemPrompt = `You are a social media campaign designer for events. 
+Generate a campaign plan as a valid JSON object with this exact structure:
+{
+  "campaignSummary": "string",
+  "postSequence": [
+    {
+      "type": "string (e.g. coming_soon)",
+      "label": "string",
+      "goal": "string",
+      "publishWindow": "string",
+      "caption": "string",
+      "hashtags": ["string1", "string2"],
+      "imageBrief": "string"
+    },
+    { ... second post ... },
+    { ... third post ... }
+  ]
+}
+Return ONLY valid JSON, no markdown or extra text.`;
 
-${eventFacts(event)}`,
-  });
+  const userPrompt = `Event details:
+${eventFacts(event)}
+
+Create exactly 3 social media posts for this event campaign.`;
+
+  let campaignPlan: z.infer<typeof campaignPlanSchema>;
+  try {
+    const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
+      },
+      body: JSON.stringify({
+        model: OPENROUTER_MODEL,
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userPrompt },
+        ],
+        temperature: 0.7,
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`OpenRouter API error: ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    const responseText = data.choices?.[0]?.message?.content || "";
+
+    // Extract JSON from response
+    const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) {
+      throw new Error("No JSON found in OpenRouter response");
+    }
+
+    const parsed = JSON.parse(jsonMatch[0]);
+    campaignPlan = campaignPlanSchema.parse(parsed);
+  } catch (err) {
+    console.error("OpenRouter generation failed:", err);
+    return NextResponse.json(
+      { error: `Campaign generation failed: ${err instanceof Error ? err.message : "Unknown error"}` },
+      { status: 500 }
+    );
+  }
 
   await db.from("events").update({ breakdown: campaignPlan }).eq("id", eventId);
 
