@@ -134,7 +134,13 @@ export async function POST(
     // 5. Trigger actual WhatsApp outreach via our background queue (if shouldSendNow)
     const outreachLogs = [];
     for (const row of inserted) {
-      const templateMessage = `Hi ${row.full_name}! 🚀 You are registered for "${event.title}". Can we count on your attendance? Reply YES to confirm, NO to decline, or ask any questions about the event! Chat link: ${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/chat/${row.chat_token}`;
+      const templateMessage = `Hey ${row.full_name}! 👋 Hope you're having a wonderful day.
+
+This is the team for "${event.title}". We're super excited to have you on our guest list! 
+
+Could you let us know if you'll be able to join us? You can reply YES to confirm, NO to decline, or ask me any questions about the schedule, location, or parking!
+
+You can also check your event details anytime here: ${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/chat/${row.chat_token}`;
       
       let status = "Delivered (WhatsApp Bot RAG Ready)";
       

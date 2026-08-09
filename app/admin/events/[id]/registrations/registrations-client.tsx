@@ -24,6 +24,7 @@ interface EventDetail {
     rsvp_at: string | null;
     chat_token: string;
     created_at: string;
+    invite_sent_at?: string | null;
   }>;
 }
 
@@ -36,10 +37,21 @@ interface UploadLog {
 
 interface UploadResult {
   success: boolean;
-  added: number;
-  skipped: number;
+  added?: number;
+  skipped?: number;
+  dispatched?: number;
+  totalTargets?: number;
   logs: UploadLog[];
+  message?: string;
 }
+
+const DEFAULT_TEMPLATE = `Hey {name}! 👋 Hope you're having a wonderful day.
+
+This is the team for "{event_title}". We're super excited to have you on our guest list! 
+
+Could you let us know if you'll be able to join us? You can reply YES to confirm, NO to decline, or ask me any questions about the schedule, location, or parking!
+
+You can also check your event details anytime here: {chat_link}`;
 
 const fetcher = async (url: string) => {
   const res = await fetch(url);
@@ -71,6 +83,11 @@ export default function RegistrationsClient({ eventId }: { eventId: string }) {
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
 
+  // Template Customizer State
+  const [templateMessage, setTemplateMessage] = useState<string>(DEFAULT_TEMPLATE);
+  const [isEditingTemplate, setIsEditingTemplate] = useState<boolean>(false);
+  const [templateSavedMsg, setTemplateSavedMsg] = useState<string | null>(null);
+
   // Upload states
   const [dragActive, setDragActive] = useState(false);
   const [parsedGuests, setParsedGuests] = useState<Array<{ full_name: string; email: string; phone: string }>>([]);
@@ -79,6 +96,24 @@ export default function RegistrationsClient({ eventId }: { eventId: string }) {
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [uploadResult, setUploadResult] = useState<UploadResult | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Manual Trigger Outreach state
+  const [triggeringAll, setTriggeringAll] = useState(false);
+  const [triggeringSingleId, setTriggeringSingleId] = useState<string | null>(null);
+
+  // CRUD Modals state
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [addForm, setAddForm] = useState({ full_name: "", email: "", phone: "", rsvp_status: "pending" });
+  const [addLoading, setAddLoading] = useState(false);
+  const [addError, setAddError] = useState<string | null>(null);
+
+  const [editingReg, setEditingReg] = useState<EventDetail["registrations"][number] | null>(null);
+  const [editForm, setEditForm] = useState({ full_name: "", email: "", phone: "", rsvp_status: "pending" });
+  const [editLoading, setEditLoading] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
+
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
 
   if (isLoading) {
     return (
@@ -112,7 +147,8 @@ export default function RegistrationsClient({ eventId }: { eventId: string }) {
     const term = search.toLowerCase();
     return (
       (reg.full_name ?? "").toLowerCase().includes(term) ||
-      (reg.email ?? "").toLowerCase().includes(term)
+      (reg.email ?? "").toLowerCase().includes(term) ||
+      (reg.phone ?? "").toLowerCase().includes(term)
     );
   });
 
@@ -124,8 +160,124 @@ export default function RegistrationsClient({ eventId }: { eventId: string }) {
     setTimeout(() => setCopiedId(null), 1500);
   }
 
-  // --- CSV/Excel Upload Handlers ---
+  // --- Manual Outreach Trigger (Force Send WhatsApp Bot Now) ---
+  const handleTriggerOutreach = async (registrationId?: string) => {
+    if (registrationId) {
+      setTriggeringSingleId(registrationId);
+    } else {
+      setTriggeringAll(true);
+    }
+    setUploadResult(null);
 
+    try {
+      const res = await fetch(`/api/events/${eventId}/registrations/trigger-outreach`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          registrationId,
+          templateMessage,
+          onlyUnsent: !registrationId, // if bulk, target unsent; if single, send directly
+        }),
+      });
+
+      const json = await res.json();
+      if (!res.ok) {
+        throw new Error(json.error || "Outreach trigger failed.");
+      }
+
+      setUploadResult(json);
+      mutate();
+    } catch (err: any) {
+      alert(`Outreach Trigger Error: ${err.message}`);
+    } finally {
+      setTriggeringAll(false);
+      setTriggeringSingleId(null);
+    }
+  };
+
+  // --- CRUD: Add Attendee ---
+  const handleAddAttendee = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAddLoading(true);
+    setAddError(null);
+
+    try {
+      const res = await fetch(`/api/events/${eventId}/registrations`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(addForm),
+      });
+
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Failed to create attendee.");
+
+      setShowAddModal(false);
+      setAddForm({ full_name: "", email: "", phone: "", rsvp_status: "pending" });
+      mutate();
+    } catch (err: any) {
+      setAddError(err.message);
+    } finally {
+      setAddLoading(false);
+    }
+  };
+
+  // --- CRUD: Edit Attendee ---
+  const openEditModal = (reg: typeof registrations[number]) => {
+    setEditingReg(reg);
+    setEditForm({
+      full_name: reg.full_name || "",
+      email: reg.email || "",
+      phone: reg.phone || "",
+      rsvp_status: reg.rsvp_status || "pending",
+    });
+    setEditError(null);
+  };
+
+  const handleUpdateAttendee = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingReg) return;
+    setEditLoading(true);
+    setEditError(null);
+
+    try {
+      const res = await fetch(`/api/events/${eventId}/registrations/${editingReg.id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(editForm),
+      });
+
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Failed to update attendee.");
+
+      setEditingReg(null);
+      mutate();
+    } catch (err: any) {
+      setEditError(err.message);
+    } finally {
+      setEditLoading(false);
+    }
+  };
+
+  // --- CRUD: Delete Attendee ---
+  const handleDeleteAttendee = async (regId: string) => {
+    setDeleteLoading(true);
+    try {
+      const res = await fetch(`/api/events/${eventId}/registrations/${regId}`, {
+        method: "DELETE",
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Failed to delete attendee.");
+
+      setDeletingId(null);
+      mutate();
+    } catch (err: any) {
+      alert(`Delete error: ${err.message}`);
+    } finally {
+      setDeleteLoading(false);
+    }
+  };
+
+  // --- Spreadsheet Upload Handlers ---
   const handleDrag = (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
@@ -153,8 +305,6 @@ export default function RegistrationsClient({ eventId }: { eventId: string }) {
 
   const normalizePhoneNumber = (phoneStr: string): string => {
     let cleaned = phoneStr.replace(/\s+/g, "").replace(/[-()]/g, "");
-    
-    // Normalize local Sri Lankan numbers to international E.164 (e.g. 0771234567 -> +94771234567)
     if (cleaned.startsWith("07")) {
       cleaned = "+94" + cleaned.slice(1);
     } else if (cleaned.startsWith("7") && cleaned.length === 9) {
@@ -162,7 +312,6 @@ export default function RegistrationsClient({ eventId }: { eventId: string }) {
     } else if (cleaned.startsWith("94") && !cleaned.startsWith("+")) {
       cleaned = "+" + cleaned;
     }
-    
     return cleaned;
   };
 
@@ -183,8 +332,6 @@ export default function RegistrationsClient({ eventId }: { eventId: string }) {
         const workbook = XLSX.read(dataArr, { type: "array" });
         const sheetName = workbook.SheetNames[0];
         const worksheet = workbook.Sheets[sheetName];
-        
-        // Convert to JSON
         const json = XLSX.utils.sheet_to_json<Record<string, any>>(worksheet, { defval: "" });
         
         if (json.length === 0) {
@@ -192,7 +339,6 @@ export default function RegistrationsClient({ eventId }: { eventId: string }) {
           return;
         }
 
-        // Standardize keys (looking for variations of Name, Email, Phone/WhatsApp)
         const parsed = json.map((row) => {
           const rowKeys = Object.keys(row);
           let full_name = "";
@@ -203,37 +349,17 @@ export default function RegistrationsClient({ eventId }: { eventId: string }) {
             const keyLower = key.toLowerCase().trim();
             const val = String(row[key] ?? "").trim();
 
-            if (
-              keyLower.includes("name") ||
-              keyLower === "fullname" ||
-              keyLower === "attendee" ||
-              keyLower === "candidate" ||
-              keyLower === "guest"
-            ) {
+            if (keyLower.includes("name") || keyLower === "fullname" || keyLower === "attendee" || keyLower === "guest") {
               full_name = val;
-            } else if (
-              keyLower.includes("email") ||
-              keyLower === "mail" ||
-              keyLower === "emailaddress" ||
-              keyLower === "email address"
-            ) {
+            } else if (keyLower.includes("email") || keyLower === "mail" || keyLower === "emailaddress") {
               email = val;
-            } else if (
-              keyLower.includes("phone") ||
-              keyLower.includes("whatsapp") ||
-              keyLower.includes("mobile") ||
-              keyLower === "number" ||
-              keyLower === "contact" ||
-              keyLower === "contactno"
-            ) {
+            } else if (keyLower.includes("phone") || keyLower.includes("whatsapp") || keyLower.includes("mobile") || keyLower === "contact") {
               phone = normalizePhoneNumber(val);
             }
           }
-
           return { full_name, email, phone };
         });
 
-        // Filter out records that don't have a name and contact detail
         const validGuests = parsed.filter(
           (g) => g.full_name.trim() !== "" && (g.email.trim() !== "" || g.phone.trim() !== "")
         );
@@ -272,8 +398,6 @@ export default function RegistrationsClient({ eventId }: { eventId: string }) {
       setUploadResult(result);
       setParsedGuests([]);
       setFileName("");
-      
-      // Refresh SWR list
       mutate();
     } catch (err: any) {
       setUploadError(err.message || "Failed to process upload.");
@@ -332,19 +456,40 @@ export default function RegistrationsClient({ eventId }: { eventId: string }) {
           <span>←</span> Back to Event Console
         </Link>
 
-        {/* Header Block */}
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-8">
+        {/* Header Block & Action Buttons */}
+        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 mb-8">
           <div>
-            <h1 className="text-3xl font-extrabold tracking-tight text-zinc-900 dark:text-zinc-50">
-              Attendee Registrations
-            </h1>
+            <div className="flex items-center gap-3">
+              <h1 className="text-3xl font-extrabold tracking-tight text-zinc-900 dark:text-zinc-50">
+                Attendee Registrations
+              </h1>
+              <span className="text-[10px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-full bg-indigo-550/10 text-indigo-600 dark:text-indigo-400 border border-indigo-500/10">
+                🔄 Live (2s)
+              </span>
+            </div>
             <p className="mt-1.5 text-sm text-zinc-500 dark:text-zinc-400">
-              Upload a guest list spreadsheet, validate formats, and trigger real-time AI WhatsApp confirmation outreach.
+              Manage member list, customize human outreach messages, and trigger real-time AI WhatsApp confirmation invitations.
             </p>
           </div>
-          <span className="text-[10px] self-start md:self-center font-bold uppercase tracking-wider px-2.5 py-1 rounded-full bg-indigo-550/10 text-indigo-600 dark:text-indigo-400 border border-indigo-500/10">
-            🔄 Live updates (2s)
-          </span>
+
+          <div className="flex flex-wrap items-center gap-3">
+            {/* Manual Trigger Bot Button */}
+            <button
+              onClick={() => handleTriggerOutreach()}
+              disabled={triggeringAll || totalCount === 0}
+              className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-xs font-bold text-white shadow-md hover:bg-emerald-500 transition-all hover:scale-[1.02] disabled:opacity-50"
+            >
+              <span>⚡</span> {triggeringAll ? "Sending WhatsApp Outreach…" : "Trigger WhatsApp Bot Now"}
+            </button>
+
+            {/* Add Attendee Button */}
+            <button
+              onClick={() => setShowAddModal(true)}
+              className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-violet-600 to-indigo-650 px-4 py-2.5 text-xs font-bold text-white shadow-md transition-all hover:scale-[1.02]"
+            >
+              <span>➕</span> Add Attendee
+            </button>
+          </div>
         </div>
 
         {/* Statistics Grid */}
@@ -367,11 +512,80 @@ export default function RegistrationsClient({ eventId }: { eventId: string }) {
           </div>
         </div>
 
+        {/* Initial Outreach Message Template Customizer Card (Message Template CRUD) */}
+        <section className="mb-8">
+          <div className="rounded-2xl border border-indigo-500/20 bg-indigo-500/[0.02] p-6 shadow-sm backdrop-blur-md dark:border-indigo-500/30 dark:bg-indigo-950/10">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-3">
+              <div>
+                <h2 className="text-base font-bold text-zinc-900 dark:text-zinc-100 flex items-center gap-2">
+                  <span>💬</span> Human Outreach Message Template
+                </h2>
+                <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
+                  Customize the initial invitation message sent to attendees. Use <code className="text-indigo-500">{`{name}`}</code>, <code className="text-indigo-500">{`{event_title}`}</code>, and <code className="text-indigo-500">{`{chat_link}`}</code> placeholders.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2">
+                {!isEditingTemplate ? (
+                  <button
+                    onClick={() => setIsEditingTemplate(true)}
+                    className="rounded-lg border border-indigo-500/30 bg-indigo-500/10 px-3 py-1.5 text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:bg-indigo-500/20 transition-all"
+                  >
+                    ✏️ Edit Template
+                  </button>
+                ) : (
+                  <>
+                    <button
+                      onClick={() => {
+                        setTemplateMessage(DEFAULT_TEMPLATE);
+                        setTemplateSavedMsg("Reset to default warm human template.");
+                        setTimeout(() => setTemplateSavedMsg(null), 3000);
+                      }}
+                      className="rounded-lg border border-zinc-300 px-3 py-1.5 text-xs font-bold hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
+                    >
+                      ↺ Reset Default
+                    </button>
+                    <button
+                      onClick={() => {
+                        setIsEditingTemplate(false);
+                        setTemplateSavedMsg("Template updated for outreach dispatches!");
+                        setTimeout(() => setTemplateSavedMsg(null), 3000);
+                      }}
+                      className="rounded-lg bg-indigo-600 px-3.5 py-1.5 text-xs font-bold text-white hover:bg-indigo-500 transition-all"
+                    >
+                      ✓ Save Template
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
+
+            {templateSavedMsg && (
+              <p className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 mb-2">
+                ✓ {templateSavedMsg}
+              </p>
+            )}
+
+            {isEditingTemplate ? (
+              <textarea
+                value={templateMessage}
+                onChange={(e) => setTemplateMessage(e.target.value)}
+                rows={6}
+                className="w-full rounded-xl border border-zinc-300 bg-white p-3.5 text-xs font-mono transition-all focus:border-indigo-500 focus:outline-none dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-100"
+              />
+            ) : (
+              <div className="rounded-xl border border-zinc-200/80 bg-white/80 p-4 text-xs font-mono whitespace-pre-wrap text-zinc-700 dark:border-zinc-800 dark:bg-zinc-950/80 dark:text-zinc-300">
+                {templateMessage}
+              </div>
+            )}
+          </div>
+        </section>
+
         {/* Excel/CSV File Uploader Card */}
         <section className="mb-8">
           <div className="rounded-2xl border border-zinc-200/80 bg-white/70 p-6 shadow-md backdrop-blur-md dark:border-zinc-800/80 dark:bg-zinc-900/40">
             <h2 className="text-base font-bold text-zinc-850 dark:text-zinc-100 flex items-center gap-2 mb-2">
-              <span>📤</span> Upload Guest Sheet
+              <span>📤</span> Bulk Upload Guest Sheet (Excel / CSV)
             </h2>
             <p className="text-xs text-zinc-400 dark:text-zinc-500 mb-4">
               Add guests in bulk. System matches columns, screens duplicates, and fires the WhatsApp bot invitations automatically.
@@ -426,7 +640,6 @@ export default function RegistrationsClient({ eventId }: { eventId: string }) {
                   </span>
                 </div>
 
-                {/* Micro preview grid */}
                 <div className="mt-3 overflow-x-auto max-h-32">
                   <table className="w-full text-left text-xs">
                     <thead>
@@ -472,12 +685,12 @@ export default function RegistrationsClient({ eventId }: { eventId: string }) {
               </div>
             )}
 
-            {/* Upload Report Panel */}
+            {/* Upload/Outreach Report Panel */}
             {uploadResult && (
-              <div className="mt-4 rounded-xl border border-green-550/30 bg-green-500/[0.01] p-5">
-                <div className="flex items-center justify-between border-b border-green-500/10 pb-3">
-                  <h3 className="text-sm font-bold text-green-600 dark:text-green-400 flex items-center gap-1.5">
-                    <span>✓</span> Import Outreach Completed
+              <div className="mt-4 rounded-xl border border-emerald-550/30 bg-emerald-500/[0.02] p-5">
+                <div className="flex items-center justify-between border-b border-emerald-500/10 pb-3">
+                  <h3 className="text-sm font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5">
+                    <span>✓</span> Outreach Execution Complete
                   </h3>
                   <button
                     onClick={() => setUploadResult(null)}
@@ -487,30 +700,34 @@ export default function RegistrationsClient({ eventId }: { eventId: string }) {
                   </button>
                 </div>
 
-                <div className="grid grid-cols-2 gap-3 mt-4 text-center sm:grid-cols-4">
-                  <div className="bg-white/40 dark:bg-zinc-950/20 rounded-lg p-2.5 border border-green-500/10">
-                    <span className="text-[9px] font-bold text-zinc-450 uppercase block">Added</span>
-                    <span className="text-lg font-black text-green-600">{uploadResult.added}</span>
-                  </div>
-                  <div className="bg-white/40 dark:bg-zinc-950/20 rounded-lg p-2.5 border border-green-500/10">
-                    <span className="text-[9px] font-bold text-zinc-450 uppercase block">Duplicates Skipped</span>
-                    <span className="text-lg font-black text-zinc-500">{uploadResult.skipped}</span>
-                  </div>
-                  <div className="bg-white/40 dark:bg-zinc-950/20 rounded-lg p-2.5 border border-green-500/10 col-span-2">
+                <div className="grid grid-cols-2 gap-3 mt-4 text-center sm:grid-cols-3">
+                  {uploadResult.added !== undefined && (
+                    <div className="bg-white/40 dark:bg-zinc-950/20 rounded-lg p-2.5 border border-emerald-500/10">
+                      <span className="text-[9px] font-bold text-zinc-450 uppercase block">Added</span>
+                      <span className="text-lg font-black text-emerald-600">{uploadResult.added}</span>
+                    </div>
+                  )}
+                  {uploadResult.dispatched !== undefined && (
+                    <div className="bg-white/40 dark:bg-zinc-950/20 rounded-lg p-2.5 border border-emerald-500/10">
+                      <span className="text-[9px] font-bold text-zinc-450 uppercase block">Dispatched</span>
+                      <span className="text-lg font-black text-emerald-600">{uploadResult.dispatched}</span>
+                    </div>
+                  )}
+                  <div className="bg-white/40 dark:bg-zinc-950/20 rounded-lg p-2.5 border border-emerald-500/10 col-span-2 sm:col-span-1">
                     <span className="text-[9px] font-bold text-zinc-450 uppercase block">Outreach Status</span>
-                    <span className="text-xs font-bold text-zinc-700 dark:text-zinc-200 mt-1 block">WhatsApp Bot RAG Dispatched</span>
+                    <span className="text-xs font-bold text-zinc-700 dark:text-zinc-200 mt-1 block">WhatsApp Bot Active</span>
                   </div>
                 </div>
 
-                {uploadResult.logs.length > 0 && (
+                {uploadResult.logs && uploadResult.logs.length > 0 && (
                   <div className="mt-4">
                     <p className="text-[10px] font-bold uppercase tracking-wider text-zinc-400 mb-2">Outreach Logs</p>
-                    <div className="max-h-32 overflow-y-auto bg-zinc-950 text-[11px] font-mono text-zinc-350 p-3 rounded-lg space-y-1.5 border border-zinc-800">
+                    <div className="max-h-36 overflow-y-auto bg-zinc-950 text-[11px] font-mono text-zinc-350 p-3 rounded-lg space-y-1.5 border border-zinc-800">
                       {uploadResult.logs.map((log, idx) => (
                         <div key={idx} className="border-b border-zinc-900 pb-1.5 last:border-b-0">
                           <div className="flex justify-between font-bold">
                             <span className="text-indigo-400">{log.recipient} ({log.phone})</span>
-                            <span className="text-green-500">{log.status}</span>
+                            <span className="text-emerald-400">{log.status}</span>
                           </div>
                           <p className="text-zinc-500 mt-0.5 leading-relaxed truncate">{log.message}</p>
                         </div>
@@ -533,7 +750,7 @@ export default function RegistrationsClient({ eventId }: { eventId: string }) {
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search by attendee name or email..."
+              placeholder="Search by name, email, or phone..."
               className="w-full rounded-xl border border-zinc-200 bg-white/70 py-2.5 pl-10 pr-4 text-sm transition-all focus:border-indigo-500 focus:outline-none dark:border-zinc-800 dark:bg-zinc-950/50"
             />
             {search && (
@@ -547,7 +764,7 @@ export default function RegistrationsClient({ eventId }: { eventId: string }) {
           </div>
         </div>
 
-        {/* Registrations List */}
+        {/* Registrations Table */}
         {registrations.length === 0 ? (
           <div className="rounded-2xl border border-dashed border-zinc-200 bg-white/50 p-12 text-center dark:border-zinc-800 dark:bg-zinc-950/20">
             <svg className="mx-auto h-12 w-12 text-zinc-400" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24">
@@ -555,7 +772,7 @@ export default function RegistrationsClient({ eventId }: { eventId: string }) {
             </svg>
             <p className="mt-4 text-sm font-semibold opacity-70">No registrations captured yet</p>
             <p className="mt-1 text-xs opacity-50">
-              Upload a guest spreadsheet above or submit attendee signups to list them here.
+              Click <strong>Add Attendee</strong> or upload a guest spreadsheet above to start.
             </p>
           </div>
         ) : filteredRegs.length === 0 ? (
@@ -573,8 +790,8 @@ export default function RegistrationsClient({ eventId }: { eventId: string }) {
                     <th className="px-6 py-4">Email Address</th>
                     <th className="px-6 py-4">WhatsApp / Phone</th>
                     <th className="px-6 py-4">RSVP Status</th>
-                    <th className="px-6 py-4">Registration Date</th>
                     <th className="px-6 py-4">Public Chat Link</th>
+                    <th className="px-6 py-4 text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
@@ -591,9 +808,6 @@ export default function RegistrationsClient({ eventId }: { eventId: string }) {
                         >
                           {reg.rsvp_status}
                         </span>
-                      </td>
-                      <td className="px-6 py-4 text-xs text-zinc-400">
-                        {new Date(reg.created_at).toLocaleString()}
                       </td>
                       <td className="px-6 py-4">
                         <button
@@ -618,6 +832,35 @@ export default function RegistrationsClient({ eventId }: { eventId: string }) {
                           )}
                         </button>
                       </td>
+                      <td className="px-6 py-4 text-right">
+                        <div className="inline-flex items-center gap-2">
+                          {/* Send WhatsApp Bot Invite to Single Guest */}
+                          <button
+                            onClick={() => handleTriggerOutreach(reg.id)}
+                            disabled={triggeringSingleId === reg.id}
+                            title="Trigger WhatsApp Invite Now"
+                            className="rounded-lg bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-1 text-xs font-bold text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20 transition-all disabled:opacity-50"
+                          >
+                            {triggeringSingleId === reg.id ? "…" : "💬 Send Invite"}
+                          </button>
+
+                          {/* Edit Button */}
+                          <button
+                            onClick={() => openEditModal(reg)}
+                            className="rounded-lg border border-zinc-200 bg-white px-2.5 py-1 text-xs font-bold hover:border-zinc-400 dark:border-zinc-800 dark:bg-zinc-950 dark:hover:border-zinc-700"
+                          >
+                            ✏️ Edit
+                          </button>
+
+                          {/* Delete Button */}
+                          <button
+                            onClick={() => setDeletingId(reg.id)}
+                            className="rounded-lg border border-red-500/20 bg-red-500/10 px-2.5 py-1 text-xs font-bold text-red-600 dark:text-red-400 hover:bg-red-500/20 transition-all"
+                          >
+                            🗑️
+                          </button>
+                        </div>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -626,6 +869,196 @@ export default function RegistrationsClient({ eventId }: { eventId: string }) {
           </div>
         )}
       </main>
+
+      {/* --- MODAL: Add Attendee --- */}
+      {showAddModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="w-full max-w-md rounded-2xl border border-zinc-200 bg-white p-6 shadow-2xl dark:border-zinc-800 dark:bg-zinc-900">
+            <h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">Add New Attendee</h3>
+            <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">
+              Manually register a new member for this event.
+            </p>
+
+            <form onSubmit={handleAddAttendee} className="mt-4 space-y-3">
+              <div>
+                <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">Full Name *</label>
+                <input
+                  required
+                  type="text"
+                  value={addForm.full_name}
+                  onChange={(e) => setAddForm({ ...addForm, full_name: e.target.value })}
+                  placeholder="e.g. John Doe"
+                  className="mt-1 w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2 text-sm focus:border-indigo-500 focus:outline-none dark:border-zinc-800 dark:bg-zinc-950"
+                />
+              </div>
+
+              <div>
+                <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">Email Address</label>
+                <input
+                  type="email"
+                  value={addForm.email}
+                  onChange={(e) => setAddForm({ ...addForm, email: e.target.value })}
+                  placeholder="e.g. john@example.com"
+                  className="mt-1 w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2 text-sm focus:border-indigo-500 focus:outline-none dark:border-zinc-800 dark:bg-zinc-950"
+                />
+              </div>
+
+              <div>
+                <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">WhatsApp / Phone Number</label>
+                <input
+                  type="text"
+                  value={addForm.phone}
+                  onChange={(e) => setAddForm({ ...addForm, phone: e.target.value })}
+                  placeholder="e.g. +94771234567"
+                  className="mt-1 w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2 text-sm focus:border-indigo-500 focus:outline-none dark:border-zinc-800 dark:bg-zinc-950"
+                />
+              </div>
+
+              <div>
+                <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">Initial RSVP Status</label>
+                <select
+                  value={addForm.rsvp_status}
+                  onChange={(e) => setAddForm({ ...addForm, rsvp_status: e.target.value })}
+                  className="mt-1 w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2 text-sm focus:border-indigo-500 focus:outline-none dark:border-zinc-800 dark:bg-zinc-950"
+                >
+                  <option value="pending">Pending</option>
+                  <option value="confirmed">Confirmed</option>
+                  <option value="declined">Declined</option>
+                </select>
+              </div>
+
+              {addError && <p className="text-xs font-semibold text-red-500 mt-2">{addError}</p>}
+
+              <div className="mt-6 flex justify-end gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowAddModal(false)}
+                  className="rounded-xl border border-zinc-300 px-4 py-2 text-xs font-bold hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={addLoading}
+                  className="rounded-xl bg-indigo-600 px-4 py-2 text-xs font-bold text-white hover:bg-indigo-500 disabled:opacity-50"
+                >
+                  {addLoading ? "Saving…" : "Add Member"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* --- MODAL: Edit Attendee --- */}
+      {editingReg && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="w-full max-w-md rounded-2xl border border-zinc-200 bg-white p-6 shadow-2xl dark:border-zinc-800 dark:bg-zinc-900">
+            <h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">Edit Attendee Details</h3>
+            <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">
+              Update information or RSVP status for {editingReg.full_name || "attendee"}.
+            </p>
+
+            <form onSubmit={handleUpdateAttendee} className="mt-4 space-y-3">
+              <div>
+                <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">Full Name</label>
+                <input
+                  type="text"
+                  value={editForm.full_name}
+                  onChange={(e) => setEditForm({ ...editForm, full_name: e.target.value })}
+                  className="mt-1 w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2 text-sm focus:border-indigo-500 focus:outline-none dark:border-zinc-800 dark:bg-zinc-950"
+                />
+              </div>
+
+              <div>
+                <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">Email Address</label>
+                <input
+                  type="email"
+                  value={editForm.email}
+                  onChange={(e) => setEditForm({ ...editForm, email: e.target.value })}
+                  className="mt-1 w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2 text-sm focus:border-indigo-500 focus:outline-none dark:border-zinc-800 dark:bg-zinc-950"
+                />
+              </div>
+
+              <div>
+                <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">WhatsApp / Phone Number</label>
+                <input
+                  type="text"
+                  value={editForm.phone}
+                  onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })}
+                  className="mt-1 w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2 text-sm focus:border-indigo-500 focus:outline-none dark:border-zinc-800 dark:bg-zinc-950"
+                />
+              </div>
+
+              <div>
+                <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">RSVP Status</label>
+                <select
+                  value={editForm.rsvp_status}
+                  onChange={(e) => setEditForm({ ...editForm, rsvp_status: e.target.value })}
+                  className="mt-1 w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2 text-sm focus:border-indigo-500 focus:outline-none dark:border-zinc-800 dark:bg-zinc-950"
+                >
+                  <option value="pending">Pending</option>
+                  <option value="confirmed">Confirmed</option>
+                  <option value="declined">Declined</option>
+                </select>
+              </div>
+
+              {editError && <p className="text-xs font-semibold text-red-500 mt-2">{editError}</p>}
+
+              <div className="mt-6 flex justify-end gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setEditingReg(null)}
+                  className="rounded-xl border border-zinc-300 px-4 py-2 text-xs font-bold hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={editLoading}
+                  className="rounded-xl bg-indigo-600 px-4 py-2 text-xs font-bold text-white hover:bg-indigo-500 disabled:opacity-50"
+                >
+                  {editLoading ? "Updating…" : "Save Changes"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* --- MODAL: Delete Confirmation --- */}
+      {deletingId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="w-full max-w-sm rounded-2xl border border-zinc-200 bg-white p-6 shadow-2xl dark:border-zinc-800 dark:bg-zinc-900 text-center">
+            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-red-500/10 text-red-500 mb-3 text-xl">
+              🗑️
+            </div>
+            <h3 className="text-base font-bold text-zinc-900 dark:text-zinc-100">Delete Attendee?</h3>
+            <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">
+              Are you sure you want to remove this member from the registration list? This action cannot be undone.
+            </p>
+
+            <div className="mt-6 flex justify-center gap-3">
+              <button
+                type="button"
+                onClick={() => setDeletingId(null)}
+                className="rounded-xl border border-zinc-300 px-4 py-2 text-xs font-bold hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={deleteLoading}
+                onClick={() => handleDeleteAttendee(deletingId)}
+                className="rounded-xl bg-red-600 px-4 py-2 text-xs font-bold text-white hover:bg-red-500 disabled:opacity-50"
+              >
+                {deleteLoading ? "Deleting…" : "Yes, Delete"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }
