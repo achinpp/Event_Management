@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import Link from "next/link";
 import useSWR from "swr";
 import * as XLSX from "xlsx";
@@ -88,6 +88,19 @@ export default function RegistrationsClient({ eventId }: { eventId: string }) {
   const [isEditingTemplate, setIsEditingTemplate] = useState<boolean>(false);
   const [templateSavedMsg, setTemplateSavedMsg] = useState<string | null>(null);
 
+  // Auto-Scheduling Lead Days State
+  const [leadDays, setLeadDays] = useState<number>(7);
+  const [updatingLeadDays, setUpdatingLeadDays] = useState(false);
+  const [leadDaysSavedMsg, setLeadDaysSavedMsg] = useState<string | null>(null);
+  const [runningCron, setRunningCron] = useState(false);
+
+  // Sync leadDays from data when loaded
+  useEffect(() => {
+    if (data?.event?.invite_lead_days !== undefined) {
+      setLeadDays(data.event.invite_lead_days);
+    }
+  }, [data?.event?.invite_lead_days]);
+
   // Upload states
   const [dragActive, setDragActive] = useState(false);
   const [parsedGuests, setParsedGuests] = useState<Array<{ full_name: string; email: string; phone: string }>>([]);
@@ -136,6 +149,18 @@ export default function RegistrationsClient({ eventId }: { eventId: string }) {
 
   const { event, registrations } = data;
 
+  // Calculate Auto-scheduling dispatch time
+  const startsAtStr = event.starts_at;
+  let scheduledDispatchTime: Date | null = null;
+  let isOutreachWindowOpen = true;
+
+  if (startsAtStr) {
+    const startsAtMs = new Date(startsAtStr).getTime();
+    const leadMs = (leadDays || 7) * 24 * 60 * 60 * 1000;
+    scheduledDispatchTime = new Date(startsAtMs - leadMs);
+    isOutreachWindowOpen = Date.now() >= scheduledDispatchTime.getTime();
+  }
+
   // Statistics calculation
   const totalCount = registrations.length;
   const confirmedCount = registrations.filter((r) => r.rsvp_status === "confirmed").length;
@@ -160,6 +185,64 @@ export default function RegistrationsClient({ eventId }: { eventId: string }) {
     setTimeout(() => setCopiedId(null), 1500);
   }
 
+  // --- Auto-Scheduling: Update Lead Days ---
+  const handleSaveLeadDays = async () => {
+    setUpdatingLeadDays(true);
+    setLeadDaysSavedMsg(null);
+
+    try {
+      const res = await fetch(`/api/events/${eventId}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ invite_lead_days: Number(leadDays) }),
+      });
+
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Failed to update lead days.");
+
+      setLeadDaysSavedMsg(`Auto-scheduling updated: Invites will send ${leadDays} days before event.`);
+      setTimeout(() => setLeadDaysSavedMsg(null), 4000);
+      mutate();
+    } catch (err: any) {
+      alert(`Failed to save auto-schedule settings: ${err.message}`);
+    } finally {
+      setUpdatingLeadDays(false);
+    }
+  };
+
+  // --- Auto-Scheduling: Run Cron Check Now ---
+  const handleRunAutoScheduleCheck = async () => {
+    setRunningCron(true);
+    setUploadResult(null);
+
+    try {
+      const adminPass = process.env.NEXT_PUBLIC_ADMIN_PASSWORD || "admin1234A";
+      const res = await fetch(`/api/cron/send-invites?token=${adminPass}`, {
+        method: "POST",
+      });
+
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Auto-schedule check failed.");
+
+      setUploadResult({
+        success: true,
+        dispatched: json.dispatchedCount || 0,
+        logs: (json.dispatched || []).map((d: any) => ({
+          recipient: d.recipient,
+          phone: d.phone,
+          message: `Auto-scheduled WhatsApp dispatch for event "${d.event}"`,
+          status: "Dispatched via Auto-Scheduler Cron",
+        })),
+        message: `Auto-scheduler checked ${json.processed || 0} pending guests. Dispatched: ${json.dispatchedCount || 0}`,
+      });
+      mutate();
+    } catch (err: any) {
+      alert(`Auto-schedule execution error: ${err.message}`);
+    } finally {
+      setRunningCron(false);
+    }
+  };
+
   // --- Manual Outreach Trigger (Force Send WhatsApp Bot Now) ---
   const handleTriggerOutreach = async (registrationId?: string) => {
     if (registrationId) {
@@ -176,7 +259,7 @@ export default function RegistrationsClient({ eventId }: { eventId: string }) {
         body: JSON.stringify({
           registrationId,
           templateMessage,
-          onlyUnsent: !registrationId, // if bulk, target unsent; if single, send directly
+          onlyUnsent: !registrationId,
         }),
       });
 
@@ -468,7 +551,7 @@ export default function RegistrationsClient({ eventId }: { eventId: string }) {
               </span>
             </div>
             <p className="mt-1.5 text-sm text-zinc-500 dark:text-zinc-400">
-              Manage member list, customize human outreach messages, and trigger real-time AI WhatsApp confirmation invitations.
+              Manage member list, configure auto-scheduling, and trigger real-time AI WhatsApp confirmation invitations.
             </p>
           </div>
 
@@ -511,6 +594,72 @@ export default function RegistrationsClient({ eventId }: { eventId: string }) {
             <p className="text-2xl font-black mt-1 text-zinc-500 dark:text-zinc-450">{pendingCount}</p>
           </div>
         </div>
+
+        {/* Auto-Scheduling Management Card */}
+        <section className="mb-8">
+          <div className="rounded-2xl border border-cyan-500/20 bg-cyan-500/[0.02] p-6 shadow-sm backdrop-blur-md dark:border-cyan-500/30 dark:bg-cyan-950/10">
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+              <div>
+                <div className="flex items-center gap-2">
+                  <h2 className="text-base font-bold text-zinc-900 dark:text-zinc-100 flex items-center gap-2">
+                    <span>⏰</span> Automatic Invite Scheduling
+                  </h2>
+                  <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase ${
+                    isOutreachWindowOpen
+                      ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20"
+                      : "bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20"
+                  }`}>
+                    {isOutreachWindowOpen ? "Active / Sending Open" : "Scheduled Future Window"}
+                  </span>
+                </div>
+                <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">
+                  Automated dispatches trigger <strong>{leadDays} days</strong> before event starts.
+                  {scheduledDispatchTime && (
+                    <span> Scheduled outreach start: <strong>{scheduledDispatchTime.toLocaleDateString()} {scheduledDispatchTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</strong>.</span>
+                  )}
+                </p>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-3">
+                {/* Lead Days Input & Save */}
+                <div className="flex items-center gap-2 bg-white/80 dark:bg-zinc-950/80 p-1.5 rounded-xl border border-zinc-200 dark:border-zinc-800">
+                  <span className="text-xs font-semibold text-zinc-500 pl-2">Send</span>
+                  <input
+                    type="number"
+                    min={0}
+                    max={365}
+                    value={leadDays}
+                    onChange={(e) => setLeadDays(Math.max(0, parseInt(e.target.value) || 0))}
+                    className="w-14 text-center text-xs font-bold py-1 bg-zinc-100 dark:bg-zinc-900 rounded-lg border border-zinc-300 dark:border-zinc-700 focus:outline-none"
+                  />
+                  <span className="text-xs font-semibold text-zinc-500">days before</span>
+                  <button
+                    onClick={handleSaveLeadDays}
+                    disabled={updatingLeadDays}
+                    className="rounded-lg bg-cyan-600 px-3 py-1 text-xs font-bold text-white hover:bg-cyan-500 transition-all disabled:opacity-50"
+                  >
+                    {updatingLeadDays ? "Saving…" : "Save"}
+                  </button>
+                </div>
+
+                {/* Run Cron Check Now Button */}
+                <button
+                  onClick={handleRunAutoScheduleCheck}
+                  disabled={runningCron}
+                  className="rounded-xl border border-cyan-500/30 bg-cyan-500/10 px-3.5 py-2 text-xs font-bold text-cyan-600 dark:text-cyan-400 hover:bg-cyan-500/20 transition-all disabled:opacity-50"
+                >
+                  {runningCron ? "🤖 Checking Auto-Schedule…" : "🤖 Run Auto-Schedule Check Now"}
+                </button>
+              </div>
+            </div>
+
+            {leadDaysSavedMsg && (
+              <p className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 mt-3">
+                ✓ {leadDaysSavedMsg}
+              </p>
+            )}
+          </div>
+        </section>
 
         {/* Initial Outreach Message Template Customizer Card (Message Template CRUD) */}
         <section className="mb-8">
@@ -690,7 +839,7 @@ export default function RegistrationsClient({ eventId }: { eventId: string }) {
               <div className="mt-4 rounded-xl border border-emerald-550/30 bg-emerald-500/[0.02] p-5">
                 <div className="flex items-center justify-between border-b border-emerald-500/10 pb-3">
                   <h3 className="text-sm font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5">
-                    <span>✓</span> Outreach Execution Complete
+                    <span>✓</span> {uploadResult.message || "Outreach Execution Complete"}
                   </h3>
                   <button
                     onClick={() => setUploadResult(null)}
