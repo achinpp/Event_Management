@@ -102,78 +102,87 @@ export async function POST(req: Request) {
     return finishedPosts(eventId);
   }
 
-  // One structured call → breakdown + 3 image briefs + 3 caption briefs.
-  const { object: briefs } = await generateObject({
-    model: google(TEXT_MODEL),
-    schema: briefsSchema,
-    prompt: `You are a social media marketer for events. Break down this event into
+  try {
+    // One structured call → breakdown + 3 image briefs + 3 caption briefs.
+    const { object: briefs } = await generateObject({
+      model: google(TEXT_MODEL),
+      schema: briefsSchema,
+      prompt: `You are a social media marketer for events. Break down this event into
 its key marketing angles, then write 3 distinct briefs for square promotional
 images and 3 distinct briefs for captions. Vary tone and audience across the
 three variants (e.g. professional, playful, urgency/FOMO).
 
 ${eventFacts(event)}`,
-  });
+    });
 
-  await db.from("events").update({ breakdown: briefs.breakdown }).eq("id", eventId);
+    await db.from("events").update({ breakdown: briefs.breakdown }).eq("id", eventId);
 
-  let logo: InlineImage | undefined;
-  if (event.logo_url) {
-    logo = await fetchLogoInline(event.logo_url).catch(() => undefined);
-  }
+    let logo: InlineImage | undefined;
+    if (event.logo_url) {
+      logo = await fetchLogoInline(event.logo_url).catch(() => undefined);
+    }
 
-  // Fan out: 3 images + 3 captions in parallel.
-  const imageTasks = briefs.imageBriefs.map(async (brief, i) => {
-    const image = await generateImage(
-      `Square social media promotional image for an event.
+    // Fan out: 3 images + 3 captions in parallel.
+    const imageTasks = briefs.imageBriefs.map(async (brief, i) => {
+      const image = await generateImage(
+        `Square social media promotional image for an event.
 Brief: ${brief}
 Event: ${event.title}${event.venue ? `, ${event.venue}` : ""}
 Style: modern, eye-catching, suitable for Instagram. ${
-        logo ? "Incorporate the attached logo tastefully." : ""
-      }`,
-      logo
-    );
-    const path = `${eventId}/${i}-${Date.now()}.png`;
-    const { error } = await db.storage
-      .from("posts")
-      .upload(path, image.bytes, { contentType: image.mimeType, upsert: true });
-    if (error) throw new Error(`storage upload failed: ${error.message}`);
-    return db.storage.from("posts").getPublicUrl(path).data.publicUrl;
-  });
+          logo ? "Incorporate the attached logo tastefully." : ""
+        }`,
+        logo
+      );
+      const path = `${eventId}/${i}-${Date.now()}.png`;
+      const { error } = await db.storage
+        .from("posts")
+        .upload(path, image.bytes, { contentType: image.mimeType, upsert: true });
+      if (error) throw new Error(`storage upload failed: ${error.message}`);
+      return db.storage.from("posts").getPublicUrl(path).data.publicUrl;
+    });
 
-  const captionTasks = briefs.captionBriefs.map(async (brief) => {
-    const { object } = await generateObject({
-      model: google(TEXT_MODEL),
-      schema: captionSchema,
-      prompt: `Write one social media caption for this event.
+    const captionTasks = briefs.captionBriefs.map(async (brief) => {
+      const { object } = await generateObject({
+        model: google(TEXT_MODEL),
+        schema: captionSchema,
+        prompt: `Write one social media caption for this event.
 Brief: ${brief}
 
 ${eventFacts(event)}`,
+      });
+      return object;
     });
-    return object;
-  });
 
-  const results = await Promise.all([
-    Promise.all(imageTasks),
-    Promise.all(captionTasks),
-  ]);
-  const [imageUrls, captions] = results;
+    const results = await Promise.all([
+      Promise.all(imageTasks),
+      Promise.all(captionTasks),
+    ]);
+    const [imageUrls, captions] = results;
 
-  for (const i of VARIANTS) {
-    const { error } = await db
-      .from("generated_posts")
-      .update({
-        image_url: imageUrls[i],
-        caption: captions[i].caption,
-        hashtags: captions[i].hashtags,
-      })
-      .eq("event_id", eventId)
-      .eq("variant_index", i);
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
+    for (const i of VARIANTS) {
+      const { error } = await db
+        .from("generated_posts")
+        .update({
+          image_url: imageUrls[i],
+          caption: captions[i].caption,
+          hashtags: captions[i].hashtags,
+        })
+        .eq("event_id", eventId)
+        .eq("variant_index", i);
+      if (error) {
+        return NextResponse.json({ error: error.message }, { status: 500 });
+      }
     }
-  }
 
-  return finishedPosts(eventId);
+    return finishedPosts(eventId);
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error("AI Generation pipeline error:", err);
+    return NextResponse.json(
+      { error: `Generation failed: ${message}` },
+      { status: 500 }
+    );
+  }
 }
 
 async function finishedPosts(eventId: string) {

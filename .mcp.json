@@ -3,6 +3,10 @@
     "supabase": {
       "type": "http",
       "url": "https://mcp.supabase.com/mcp?project_ref=yxbwydpmcbwkxygcfixn&features=docs%2Caccount%2Cdatabase%2Cdebugging%2Cdevelopment%2Cfunctions%2Cbranching"
+    },
+    "penpot": {
+      "type": "http",
+      "url": "http://194.233.95.35:4401/mcp?userToken=eyJhbGciOiJBMjU2S1ciLCJlbmMiOiJBMjU2R0NNIn0.uGcckFexT2OSxIPdb5B6KmnFKuockIS7FPVNZUU_JpVx5mvbl6i9mQ.TgshiYhZTJjCGRxg.WOU7DLcfZ8RD-1C19191XqaHHwLZfQtxt5zOhX0lm72S48WwpsrWhZTERAqT10XQo09gnJWYvfkpv3B5NfkJDvLsIdwHqc9OuI-RM4TOmLVQumJ-FEI-QW7f6NLs2i05rwOMpEsi63gcidmRdYecIfKJv2F-IJUg3Ye4Gy4V_v8qmBhW_THt9JwuPVlD1yZJS5eOK5R5Ca6Y.fQngwWBacI8QJWybkzFrjA"
     }
   }
 }
