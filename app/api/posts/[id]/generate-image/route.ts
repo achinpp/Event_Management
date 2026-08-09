@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { supabaseAdmin } from "@/lib/supabase";
 import { generateImage, fetchLogoInline } from "@/lib/gemini-image";
+import { demoImageUrl } from "@/lib/demo";
 
 const imageRequestSchema = z.object({
   imageBrief: z.string().min(1),
@@ -23,7 +24,7 @@ export async function POST(
   const db = supabaseAdmin();
   const { data: post, error: postError } = await db
     .from("generated_posts")
-    .select("id, event_id")
+    .select("id, event_id, variant_index")
     .eq("id", id)
     .maybeSingle();
 
@@ -32,6 +33,18 @@ export async function POST(
   }
   if (!post) {
     return NextResponse.json({ error: "post not found" }, { status: 404 });
+  }
+
+  if (process.env.DEMO_MODE === "true") {
+    const imageUrl = demoImageUrl(post.variant_index);
+    const { error: updateError } = await db
+      .from("generated_posts")
+      .update({ image_url: imageUrl })
+      .eq("id", id);
+    if (updateError) {
+      return NextResponse.json({ error: updateError.message }, { status: 500 });
+    }
+    return NextResponse.json({ imageUrl });
   }
 
   const { data: event, error: eventError } = await db

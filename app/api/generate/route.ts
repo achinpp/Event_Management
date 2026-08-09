@@ -3,6 +3,7 @@ import { z } from "zod";
 import { google } from "@ai-sdk/google";
 import { generateObject } from "ai";
 import { supabaseAdmin } from "@/lib/supabase";
+import { demoCampaignPlan } from "@/lib/demo";
 
 export const maxDuration = 300;
 export const runtime = "nodejs";
@@ -128,18 +129,21 @@ IMPORTANT RULES:
 
   let campaignPlan: z.infer<typeof campaignPlanSchema>;
   try {
-    const result = await generateObject({
-      model: google(CAMPAIGN_MODEL),
-      schema: campaignPlanSchema,
-      prompt,
-    });
-    campaignPlan = result.object;
+    if (process.env.DEMO_MODE === "true") {
+      campaignPlan = demoCampaignPlan;
+    } else {
+      const result = await generateObject({
+        model: google(CAMPAIGN_MODEL),
+        schema: campaignPlanSchema,
+        prompt,
+      });
+      campaignPlan = result.object;
+    }
   } catch (err) {
     console.error("Campaign generation failed:", err);
     return NextResponse.json(
       { error: `Campaign generation failed: ${err instanceof Error ? err.message : "Unknown error"}` },
       { status: 500 }
-
     );
   }
 
