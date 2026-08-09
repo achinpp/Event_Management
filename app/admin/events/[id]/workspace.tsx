@@ -15,6 +15,8 @@ interface Post {
   final_caption: string | null;
   status: string;
   scheduled_at: string | null;
+  created_at?: string;
+  updated_at?: string;
 }
 
 interface PlannedPost {
@@ -164,6 +166,11 @@ export default function Workspace({ eventId }: { eventId: string }) {
   const router = useRouter();
   const [generating, setGenerating] = useState(false);
   const [busyImageIndex, setBusyImageIndex] = useState<number | null>(null);
+  const [busyCaptionIndex, setBusyCaptionIndex] = useState<number | null>(null);
+  const [isQueueRunning, setIsQueueRunning] = useState(false);
+  const [queueIndex, setQueueIndex] = useState<number | null>(null);
+  const [savingAllPairs, setSavingAllPairs] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(Date.now());
   const [error, setError] = useState<string | null>(null);
   const [selectedImage, setSelectedImage] = useState<number | null>(null);
   const [selectedCaption, setSelectedCaption] = useState<number | null>(null);
@@ -180,7 +187,33 @@ export default function Workspace({ eventId }: { eventId: string }) {
 
   const { event, posts } = data;
   const campaignPlan = event.breakdown;
-  const chosen = posts.find((p) => p.final_caption !== null) ?? null;
+  const savedPairs = posts.filter((p) => p.final_caption !== null);
+
+  async function runImageQueue(targetPosts?: Post[]) {
+    const listToProcess = targetPosts ?? posts;
+    if (!campaignPlan?.postSequence || listToProcess.length === 0) return;
+    setIsQueueRunning(true);
+    setError(null);
+    for (let i = 0; i < listToProcess.length; i++) {
+      const p = listToProcess[i];
+      if (!p.image_url) {
+        setQueueIndex(i);
+        const imageBrief = campaignPlan.postSequence[i]?.imageBrief ?? "Event poster design";
+        const res = await fetch(`/api/posts/${p.id}/generate-image`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ imageBrief }),
+        });
+        if (!res.ok) {
+          const payload = await res.json().catch(() => null);
+          console.warn(`Image queue item ${i} failed:`, payload?.error);
+        }
+        await mutate();
+      }
+    }
+    setQueueIndex(null);
+    setIsQueueRunning(false);
+  }
 
   async function generate() {
     setGenerating(true);
@@ -190,12 +223,19 @@ export default function Workspace({ eventId }: { eventId: string }) {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ eventId }),
     });
+    setGenerating(false);
     if (!res.ok) {
       const json = await res.json().catch(() => null);
       setError(json?.error ?? `generate failed (${res.status})`);
+      return;
     }
-    setGenerating(false);
-    mutate();
+    const json = await res.json();
+    await mutate();
+    
+    // Auto-trigger image generation queue for all posts
+    if (json?.posts && Array.isArray(json.posts)) {
+      runImageQueue(json.posts);
+    }
   }
 
   async function savePair() {
@@ -204,17 +244,7 @@ export default function Workspace({ eventId }: { eventId: string }) {
     const captionRow = posts.find((p) => p.variant_index === selectedCaption);
     if (!imageRow || !captionRow?.caption) return;
     setError(null);
-    // Clear any previously chosen row, then mark the selected image row with
-    // the selected caption text as its final_caption.
-    for (const p of posts) {
-      if (p.final_caption !== null && p.id !== imageRow.id) {
-        await fetch(`/api/posts/${p.id}`, {
-          method: "PATCH",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ final_caption: null }),
-        });
-      }
-    }
+    
     const res = await fetch(`/api/posts/${imageRow.id}`, {
       method: "PATCH",
       headers: { "content-type": "application/json" },
@@ -224,6 +254,34 @@ export default function Workspace({ eventId }: { eventId: string }) {
     setSelectedImage(null);
     setSelectedCaption(null);
     mutate();
+  }
+
+  async function saveSinglePair(postIndex: number) {
+    const post = posts[postIndex];
+    if (!post || !post.caption) return;
+    setError(null);
+    const res = await fetch(`/api/posts/${post.id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ final_caption: post.caption }),
+    });
+    if (!res.ok) setError("saving pair failed");
+    mutate();
+  }
+
+  async function saveAllRelatedPairs() {
+    setSavingAllPairs(true);
+    setError(null);
+    const res = await fetch(`/api/events/${eventId}/save-all-pairs`, {
+      method: "POST",
+    });
+    setSavingAllPairs(false);
+    if (!res.ok) {
+      const json = await res.json().catch(() => null);
+      setError(json?.error ?? "Failed to save all pairs");
+    } else {
+      mutate();
+    }
   }
 
   async function generateImageForPost(postIndex: number) {
@@ -245,7 +303,28 @@ export default function Workspace({ eventId }: { eventId: string }) {
     }
 
     setBusyImageIndex(null);
-    mutate();
+    setRefreshKey(Date.now());
+    await mutate();
+  }
+
+  async function regenerateCaptionForPost(postIndex: number) {
+    const post = posts[postIndex];
+    if (!post) return;
+    setBusyCaptionIndex(postIndex);
+    setError(null);
+
+    const res = await fetch(`/api/posts/${post.id}/regenerate-caption`, {
+      method: "POST",
+    });
+
+    if (!res.ok) {
+      const payload = await res.json().catch(() => null);
+      setError(payload?.error ?? "Caption regeneration failed");
+    }
+
+    setBusyCaptionIndex(null);
+    setRefreshKey(Date.now());
+    await mutate();
   }
 
   async function handleDelete() {
@@ -598,51 +677,177 @@ export default function Workspace({ eventId }: { eventId: string }) {
                 defaultOpen={true}
                 accentColor="amber"
               >
-                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                  {campaignPlan.postSequence.map((post, index) => (
-                    <div
-                      key={post.type}
-                      className="flex flex-col justify-between rounded-xl border border-zinc-200 bg-white/40 p-5 dark:border-zinc-800 dark:bg-zinc-950/20"
-                    >
-                      <div>
-                        <div className="flex items-center justify-between gap-2 border-b border-zinc-200/50 dark:border-zinc-800/50 pb-2.5 mb-3">
-                          <span className="font-bold text-xs text-zinc-800 dark:text-zinc-200">{post.label}</span>
-                          <span className="rounded-full bg-amber-500/10 px-2.5 py-0.5 text-[10px] font-bold text-amber-600 dark:text-amber-400">
-                            {post.publishWindow}
-                          </span>
-                        </div>
-                        
-                        <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">Platform Strategy</span>
-                        <p className="text-xs font-semibold text-zinc-700 dark:text-zinc-300 mt-0.5">{post.platform} · {post.goal}</p>
-                        
-                        <p className="mt-3.5 text-sm leading-relaxed text-zinc-600 dark:text-zinc-350">{post.caption}</p>
-                        <p className="mt-2 text-xs text-indigo-500 dark:text-indigo-400">
-                          {post.hashtags.join(" ")}
-                        </p>
-                        
-                        {post.callToAction && (
-                          <p className="mt-3 text-xs font-bold text-amber-600 dark:text-amber-400">
-                            CTA: {post.callToAction}
-                          </p>
-                        )}
-                        
-                        <div className="mt-4 border-t border-zinc-200/40 dark:border-zinc-800/40 pt-3 text-xs">
-                          <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">Visual Graphic Prompt</span>
-                          <p className="mt-1 text-zinc-500 dark:text-zinc-400 leading-normal">{post.imageBrief}</p>
-                        </div>
-                      </div>
+                {/* Header Actions & Auto-Queue Bar */}
+                <div className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-500/20 bg-amber-500/5 p-4">
+                  <div>
+                    <h4 className="text-xs font-bold uppercase tracking-wider text-amber-700 dark:text-amber-300">
+                      Campaign Post Pairs & Assets
+                    </h4>
+                    <p className="mt-0.5 text-xs text-amber-600/80 dark:text-amber-400/80">
+                      Generate missing graphics automatically, regenerate individual items, and save all post pairs.
+                    </p>
+                  </div>
 
-                      <div className="mt-5 flex flex-col gap-2">
-                        <button
-                          onClick={() => generateImageForPost(index)}
-                          disabled={busyImageIndex !== null}
-                          className="w-full rounded-xl bg-indigo-600 py-2.5 text-xs font-bold text-white shadow-sm transition-all hover:bg-indigo-500 disabled:opacity-50"
-                        >
-                          {busyImageIndex === index ? "⏳ Synthesizing graphic..." : "🎨 Generate Image (Gemini AI)"}
-                        </button>
-                      </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      onClick={() => runImageQueue()}
+                      disabled={isQueueRunning}
+                      className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-amber-600 px-3.5 text-xs font-bold text-white shadow-sm transition-all hover:bg-amber-500 disabled:opacity-50"
+                    >
+                      {isQueueRunning ? `⏳ Generating Queue #${(queueIndex ?? 0) + 1}…` : "⚡ Auto-Generate All Graphics"}
+                    </button>
+
+                    <button
+                      onClick={saveAllRelatedPairs}
+                      disabled={savingAllPairs}
+                      className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-gradient-to-r from-violet-600 to-indigo-650 px-4 text-xs font-bold text-white shadow-sm transition-all hover:scale-[1.01] disabled:opacity-50"
+                    >
+                      {savingAllPairs ? "Saving Pairs…" : "✨ Save All Related Pairs"}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Queue Progress Bar */}
+                {isQueueRunning && (
+                  <div className="mb-6 rounded-xl border border-indigo-500/20 bg-indigo-500/5 p-3.5">
+                    <div className="flex items-center justify-between text-xs font-bold text-indigo-600 dark:text-indigo-400 mb-1.5">
+                      <span>Synthesizing campaign images in background queue...</span>
+                      <span>{queueIndex !== null ? `Post #${queueIndex + 1} of ${campaignPlan.postSequence.length}` : "Processing..."}</span>
                     </div>
-                  ))}
+                    <div className="h-2 w-full overflow-hidden rounded-full bg-indigo-500/20">
+                      <div
+                        className="h-full bg-indigo-600 transition-all duration-300"
+                        style={{
+                          width: `${(((queueIndex ?? 0) + 1) / campaignPlan.postSequence.length) * 100}%`,
+                        }}
+                      />
+                    </div>
+                  </div>
+                )}
+
+                <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+                  {campaignPlan.postSequence.map((post, index) => {
+                    const dbPost = posts.find((p) => p.variant_index === index) || posts[index];
+                    const imageUrl = dbPost?.image_url
+                      ? `${dbPost.image_url}?v=${refreshKey}`
+                      : null;
+                    const isBusyImage = busyImageIndex === index;
+                    const isBusyCaption = busyCaptionIndex === index;
+                    const isQueueActiveThis = isQueueRunning && queueIndex === index;
+                    const isSavedPair = dbPost?.final_caption !== null && dbPost?.final_caption !== undefined;
+
+                    return (
+                      <div
+                        key={post.type || index}
+                        className={`flex flex-col justify-between rounded-2xl border p-5 transition-all ${
+                          isSavedPair
+                            ? "border-green-500/30 bg-green-500/[0.02] dark:border-green-500/20"
+                            : "border-zinc-200 bg-white/40 dark:border-zinc-800 dark:bg-zinc-950/20"
+                        }`}
+                      >
+                        <div>
+                          {/* Top Tag Header */}
+                          <div className="flex items-center justify-between gap-2 border-b border-zinc-200/50 dark:border-zinc-800/50 pb-2.5 mb-3">
+                            <span className="font-bold text-xs text-zinc-800 dark:text-zinc-200">{post.label}</span>
+                            <div className="flex items-center gap-1.5">
+                              {isSavedPair && (
+                                <span className="rounded-full bg-green-500/10 px-2 py-0.5 text-[10px] font-bold text-green-600 dark:text-green-400">
+                                  ✓ Saved Pair
+                                </span>
+                              )}
+                              <span className="rounded-full bg-amber-500/10 px-2 py-0.5 text-[10px] font-bold text-amber-600 dark:text-amber-400">
+                                {post.publishWindow}
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Image Box */}
+                          <div className="mb-4 overflow-hidden rounded-xl border border-zinc-200 bg-zinc-100 dark:border-zinc-800 dark:bg-zinc-900">
+                            {imageUrl ? (
+                              <img
+                                src={imageUrl}
+                                alt={post.label}
+                                className="aspect-square w-full object-cover transition-transform duration-300 hover:scale-105"
+                                onError={(e) => {
+                                  // Fallback display if fetch fails
+                                  (e.target as HTMLElement).style.display = "none";
+                                }}
+                              />
+                            ) : isQueueActiveThis || isBusyImage ? (
+                              <div className="flex aspect-square w-full animate-pulse flex-col items-center justify-center p-4 text-center text-xs font-semibold text-indigo-600 dark:text-indigo-400">
+                                <span className="text-xl mb-1">🎨</span>
+                                <span>Synthesizing graphic with Gemini AI…</span>
+                              </div>
+                            ) : (
+                              <div className="flex aspect-square w-full flex-col items-center justify-center p-4 text-center text-xs font-semibold opacity-50">
+                                <span className="text-xl mb-1">🖼️</span>
+                                <span>No graphic generated yet</span>
+                              </div>
+                            )}
+                          </div>
+
+                          <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">Platform & Goal</span>
+                          <p className="text-xs font-semibold text-zinc-700 dark:text-zinc-300 mt-0.5">{post.platform} · {post.goal}</p>
+
+                          <div className="mt-3">
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">Caption Copy</span>
+                            <p className="mt-1 text-sm leading-relaxed text-zinc-600 dark:text-zinc-350">
+                              {dbPost?.caption ?? post.caption}
+                            </p>
+                          </div>
+
+                          {(dbPost?.hashtags?.length || post.hashtags?.length) && (
+                            <p className="mt-2 text-xs text-indigo-500 dark:text-indigo-400">
+                              {(dbPost?.hashtags ?? post.hashtags).join(" ")}
+                            </p>
+                          )}
+
+                          {post.callToAction && (
+                            <p className="mt-2.5 text-xs font-bold text-amber-600 dark:text-amber-400">
+                              CTA: {post.callToAction}
+                            </p>
+                          )}
+
+                          <div className="mt-3.5 border-t border-zinc-200/40 dark:border-zinc-800/40 pt-2.5 text-xs">
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">Creative Brief</span>
+                            <p className="mt-1 text-zinc-500 dark:text-zinc-400 leading-normal text-[11px]">{post.imageBrief}</p>
+                          </div>
+                        </div>
+
+                        {/* Action Buttons for this card */}
+                        <div className="mt-5 flex flex-col gap-2 pt-3 border-t border-zinc-200/40 dark:border-zinc-800/40">
+                          <div className="grid grid-cols-2 gap-2">
+                            <button
+                              onClick={() => generateImageForPost(index)}
+                              disabled={busyImageIndex !== null || isQueueRunning}
+                              className="rounded-xl border border-zinc-200 bg-white px-3 py-2 text-[11px] font-bold text-zinc-700 shadow-sm transition-all hover:bg-zinc-50 disabled:opacity-40 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300"
+                            >
+                              {isBusyImage ? "⏳ Graphics…" : "🎨 Regenerate Image"}
+                            </button>
+
+                            <button
+                              onClick={() => regenerateCaptionForPost(index)}
+                              disabled={busyCaptionIndex !== null}
+                              className="rounded-xl border border-zinc-200 bg-white px-3 py-2 text-[11px] font-bold text-zinc-700 shadow-sm transition-all hover:bg-zinc-50 disabled:opacity-40 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300"
+                            >
+                              {isBusyCaption ? "⏳ Text…" : "✍️ Regenerate Caption"}
+                            </button>
+                          </div>
+
+                          <button
+                            onClick={() => saveSinglePair(index)}
+                            className={`w-full rounded-xl py-2.5 text-xs font-bold shadow-sm transition-all ${
+                              isSavedPair
+                                ? "border border-green-500/30 bg-green-500/10 text-green-700 dark:text-green-300 hover:bg-green-500/20"
+                                : "bg-indigo-600 text-white hover:bg-indigo-500"
+                            }`}
+                          >
+                            {isSavedPair ? "✓ Pair Saved to Campaign" : "💾 Save This Pair"}
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               </CollapsibleSection>
             )}
@@ -735,7 +940,7 @@ export default function Workspace({ eventId }: { eventId: string }) {
             <div>
               <h2 className="text-xl font-extrabold tracking-tight">Campaign Assembly Console</h2>
               <p className="mt-1 text-xs text-zinc-400 dark:text-zinc-500">
-                Match generated graphics with corresponding captions to compile a chosen post, then schedule dispatch times.
+                Match generated graphics with corresponding captions to compile chosen pairs, then schedule dispatch times.
               </p>
             </div>
 
@@ -749,37 +954,40 @@ export default function Workspace({ eventId }: { eventId: string }) {
                 </h3>
                 
                 <div className="grid gap-3 grid-cols-2">
-                  {posts.map((post) => (
-                    <button
-                      key={post.id}
-                      onClick={() => setSelectedImage(post.variant_index)}
-                      disabled={!post.image_url}
-                      className={`group relative overflow-hidden rounded-2xl border-2 text-left transition-all ${
-                        selectedImage === post.variant_index
-                          ? "border-violet-500 shadow-[0_0_20px_rgba(139,92,246,0.25)] scale-[1.01]"
-                          : "border-zinc-200 dark:border-zinc-800 hover:border-zinc-400 dark:hover:border-zinc-650"
-                      }`}
-                    >
-                      {post.image_url ? (
-                        <img
-                          src={post.image_url}
-                          alt={`Variant ${post.variant_index + 1}`}
-                          className="aspect-square w-full object-cover group-hover:scale-102 transition-transform duration-300"
-                        />
-                      ) : (
-                        <div className="flex aspect-square w-full animate-pulse items-center justify-center bg-zinc-200 text-xs font-semibold opacity-60 dark:bg-zinc-900">
-                          pending graphic…
-                        </div>
-                      )}
-                      
-                      {/* Check badge */}
-                      {selectedImage === post.variant_index && (
-                        <span className="absolute top-2 right-2 flex h-5 w-5 items-center justify-center rounded-full bg-violet-600 text-white text-[10px]">
-                          ✓
-                        </span>
-                      )}
-                    </button>
-                  ))}
+                  {posts.map((post) => {
+                    const imgUrl = post.image_url ? `${post.image_url}?v=${refreshKey}` : null;
+                    return (
+                      <button
+                        key={post.id}
+                        onClick={() => setSelectedImage(post.variant_index)}
+                        disabled={!post.image_url}
+                        className={`group relative overflow-hidden rounded-2xl border-2 text-left transition-all ${
+                          selectedImage === post.variant_index
+                            ? "border-violet-500 shadow-[0_0_20px_rgba(139,92,246,0.25)] scale-[1.01]"
+                            : "border-zinc-200 dark:border-zinc-800 hover:border-zinc-400 dark:hover:border-zinc-650"
+                        }`}
+                      >
+                        {imgUrl ? (
+                          <img
+                            src={imgUrl}
+                            alt={`Variant ${post.variant_index + 1}`}
+                            className="aspect-square w-full object-cover group-hover:scale-102 transition-transform duration-300"
+                          />
+                        ) : (
+                          <div className="flex aspect-square w-full animate-pulse items-center justify-center bg-zinc-200 text-xs font-semibold opacity-60 dark:bg-zinc-900">
+                            pending graphic…
+                          </div>
+                        )}
+                        
+                        {/* Check badge */}
+                        {selectedImage === post.variant_index && (
+                          <span className="absolute top-2 right-2 flex h-5 w-5 items-center justify-center rounded-full bg-violet-600 text-white text-[10px]">
+                            ✓
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
                 </div>
               </section>
 
@@ -829,20 +1037,35 @@ export default function Workspace({ eventId }: { eventId: string }) {
                     disabled={selectedImage === null || selectedCaption === null}
                     className="w-full sm:w-auto rounded-xl bg-gradient-to-r from-violet-600 to-indigo-650 px-6 py-3 text-sm font-bold text-white shadow-md hover:scale-[1.01] hover:shadow-indigo-500/20 disabled:opacity-40"
                   >
-                    Save As Chosen Pair
+                    Save As Selected Pair
                   </button>
                 </div>
               </section>
 
             </div>
 
-            {/* 3. Chosen post Scheduling Card (Simulated Composer) */}
-            {chosen && (
-              <ChosenPost
-                key={`${chosen.id}:${chosen.final_caption}`}
-                post={chosen}
-                onSaved={() => mutate()}
-              />
+            {/* 3. Saved Campaign Pairs Scheduling List */}
+            {savedPairs.length > 0 && (
+              <div className="space-y-6">
+                <div className="flex items-center justify-between border-b border-zinc-200 pb-3 dark:border-zinc-800">
+                  <h3 className="text-sm font-bold uppercase tracking-wider text-indigo-650 dark:text-indigo-400">
+                    3 · Dispatch Scheduler ({savedPairs.length} Saved Pairs)
+                  </h3>
+                  <span className="text-xs text-zinc-400">
+                    Schedule publish dates for all saved campaign pairs
+                  </span>
+                </div>
+
+                <div className="space-y-6">
+                  {savedPairs.map((pair) => (
+                    <ChosenPost
+                      key={`${pair.id}:${pair.final_caption}:${pair.updated_at || ""}`}
+                      post={pair}
+                      onSaved={() => mutate()}
+                    />
+                  ))}
+                </div>
+              </div>
             )}
 
           </div>

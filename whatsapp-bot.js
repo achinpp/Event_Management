@@ -11,7 +11,7 @@ const client = new Client({
   }),
   webVersionCache: {
     type: "remote",
-    remotePath: "https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/2.2412.54.html"
+    remotePath: "https://raw.githubusercontent.com/AshleyB-C/AshBot/refs/heads/main/web-version-cache/2.3000.10173612353.html"
   },
   puppeteer: {
     headless: true,
@@ -43,6 +43,11 @@ client.on("message", async (msg) => {
   // msg.from looks like "94771234567@c.us" -> convert to "+94771234567"
   const phone = "+" + msg.from.split("@")[0];
   const text = msg.body;
+
+  // Ignore empty messages (e.g. stickers, images without caption, status updates)
+  if (!text || typeof text !== "string" || text.trim().length === 0) {
+    return;
+  }
 
   console.log(`\n[Incoming Message] Phone: ${phone} | Content: "${text}"`);
 
@@ -103,29 +108,48 @@ async function processQueue() {
     const task = messageQueue.shift();
     if (!task) continue;
     const { phone, message, recipient } = task;
-    const cleanedPhone = phone.replace("+", "").replace(/\s+/g, "") + "@c.us";
+
+    // Clean and normalize phone number (e.g. 0771234567 -> 94771234567)
+    let digitsOnly = String(phone).replace(/\D/g, "");
+    if (digitsOnly.startsWith("0")) {
+      digitsOnly = "94" + digitsOnly.slice(1);
+    }
 
     try {
-      console.log(`\n[Queue Processor] Processing invite for: ${recipient ?? cleanedPhone}`);
+      console.log(`\n[Queue Processor] Processing invite for: ${recipient ?? digitsOnly}`);
       
-      // Look up chat object
-      const chat = await client.getChatById(cleanedPhone);
-      
-      // 1. Simulate "typing..." presence
-      console.log(`[Queue Processor] Simulating typing to ${cleanedPhone}...`);
-      await chat.sendStateTyping();
+      // Check if number is registered on WhatsApp
+      let numberId = null;
+      try {
+        numberId = await client.getNumberId(digitsOnly);
+      } catch (checkErr) {
+        console.warn(`[Queue Processor] Could not verify registration for ${digitsOnly}: ${checkErr.message}`);
+      }
 
-      // Typing simulation duration: random 3 to 6 seconds
-      const typingTime = Math.floor(Math.random() * 3000) + 3000;
-      await new Promise((resolve) => setTimeout(resolve, typingTime));
+      if (!numberId) {
+        console.warn(`[Queue Processor] Skipped ${digitsOnly} (${recipient ?? "Unknown"}): Phone number is not registered on WhatsApp.`);
+        if (messageQueue.length > 0) {
+          const waitTime = Math.floor(Math.random() * 2000) + 2000;
+          console.log(`[Queue Processor] Waiting ${waitTime / 1000}s before next dispatch...`);
+          await new Promise((resolve) => setTimeout(resolve, waitTime));
+        }
+        continue;
+      }
 
-      // 2. Clear typing state & send the message
-      await chat.clearState();
-      console.log(`[Queue Processor] Sending message...`);
-      await client.sendMessage(cleanedPhone, message);
-      console.log(`[Queue Processor] Sent successfully.`);
+      // Use phone number directly with @c.us (not the LID from getNumberId which doesn't deliver)
+      const chatId = digitsOnly + "@c.us";
+
+      // 1. Human-like pause before sending (3-6 seconds)
+      const pauseTime = Math.floor(Math.random() * 3000) + 3000;
+      console.log(`[Queue Processor] Pausing ${pauseTime / 1000}s before sending to ${chatId}...`);
+      await new Promise((resolve) => setTimeout(resolve, pauseTime));
+
+      // 2. Send the message directly (works even for new contacts)
+      console.log(`[Queue Processor] Sending message to ${chatId}...`);
+      await client.sendMessage(chatId, message);
+      console.log(`[Queue Processor] Sent successfully to ${chatId}.`);
     } catch (err) {
-      console.error(`[Queue Processor] Failed to send message to ${cleanedPhone}:`, err.message);
+      console.error(`[Queue Processor] Failed to send message to ${digitsOnly}:`, err.message);
     }
 
     // 3. Human-like delay before sending next message: random 5 to 12 seconds

@@ -35,16 +35,20 @@ Style: modern, polished visual layout, clean typography, vibrant high-quality ev
   );
 
   const db = supabaseAdmin();
-  const path = `${eventId}/${postId}-${Date.now()}.png`;
+  const ext = image.mimeType?.includes("svg") ? "svg" : "png";
+  const path = `${eventId}/${postId}-${Date.now()}.${ext}`;
+
+  let imageUrl: string;
   const { error: uploadError } = await db.storage
     .from("posts")
     .upload(path, image.bytes, { contentType: image.mimeType, upsert: true });
 
-  if (uploadError) {
-    throw new Error(`Failed to upload generated post image: ${uploadError.message}`);
+  if (!uploadError) {
+    imageUrl = db.storage.from("posts").getPublicUrl(path).data.publicUrl;
+  } else {
+    console.warn(`Storage upload warning (${uploadError.message}), using Data URI fallback.`);
+    imageUrl = `data:${image.mimeType};base64,${image.bytes.toString("base64")}`;
   }
-
-  const imageUrl = db.storage.from("posts").getPublicUrl(path).data.publicUrl;
 
   return { imageUrl };
 }
