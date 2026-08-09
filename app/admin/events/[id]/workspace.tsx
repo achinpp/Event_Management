@@ -87,6 +87,7 @@ interface EventDetail {
     id: string;
     full_name: string | null;
     email: string | null;
+    phone: string | null;
     rsvp_status: string;
     rsvp_at: string | null;
     chat_token: string;

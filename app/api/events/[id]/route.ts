@@ -56,7 +56,7 @@ export async function GET(
       .order("variant_index"),
     db
       .from("registrations")
-      .select("id, full_name, email, rsvp_status, rsvp_at, chat_token, created_at")
+      .select("id, full_name, email, phone, rsvp_status, rsvp_at, chat_token, created_at")
       .eq("event_id", id)
       .order("created_at", { ascending: false }),
   ]);
