@@ -386,6 +386,14 @@ export default function Workspace({ eventId }: { eventId: string }) {
               >
                 ✏️ Edit Details
               </button>
+              
+              <Link
+                href={`/admin/events/${eventId}/registrations`}
+                className="inline-flex h-10 items-center gap-1.5 rounded-xl border border-zinc-200 bg-white px-4 text-xs font-bold text-zinc-700 transition-colors hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-300 dark:hover:bg-zinc-850"
+              >
+                👥 Registrations ({data.registrations.length})
+              </Link>
+
               <button
                 onClick={handleDelete}
                 disabled={deleting}
@@ -825,8 +833,7 @@ export default function Workspace({ eventId }: { eventId: string }) {
           </div>
         )}
 
-        {/* ── Attendee registrations Table ────────────────────────────────── */}
-        <RegistrationsTable registrations={data.registrations} />
+
 
       </main>
 
@@ -924,105 +931,6 @@ export default function Workspace({ eventId }: { eventId: string }) {
   );
 }
 
-// ── Registrations Table ─────────────────────────────────────────────────
-
-const RSVP_STYLES: Record<string, string> = {
-  confirmed: "bg-green-500/10 text-green-600 dark:text-green-400 border border-green-500/20",
-  declined: "bg-red-500/10 text-red-600 dark:text-red-400 border border-red-500/20",
-  pending: "bg-zinc-500/10 text-zinc-600 dark:text-zinc-400 border border-zinc-500/20 opacity-80",
-};
-
-function RegistrationsTable({
-  registrations,
-}: {
-  registrations: EventDetail["registrations"];
-}) {
-  const [copiedId, setCopiedId] = useState<string | null>(null);
-
-  async function copyLink(reg: EventDetail["registrations"][number]) {
-    await navigator.clipboard.writeText(
-      `${window.location.origin}/chat/${reg.chat_token}`
-    );
-    setCopiedId(reg.id);
-    setTimeout(() => setCopiedId(null), 1500);
-  }
-
-  return (
-    <section className="mt-12 border-t border-zinc-200/50 pt-8 dark:border-zinc-800/50">
-      <div className="flex flex-wrap items-baseline justify-between gap-2 mb-5">
-        <h2 className="text-xl font-extrabold tracking-tight">Attendee Registrations</h2>
-        <span className="text-xs text-zinc-400 dark:text-zinc-500">
-          📋 {registrations.length} Active • Live SWR polling (2s)
-        </span>
-      </div>
-      
-      {registrations.length === 0 ? (
-        <div className="rounded-2xl border border-dashed border-zinc-200 bg-white/50 p-12 text-center dark:border-zinc-800 dark:bg-zinc-950/20">
-          <p className="text-sm font-semibold opacity-70">No registrations captured yet</p>
-          <p className="mt-1 text-xs opacity-50">
-            Submit attendee signups via Google Form or manually seed Supabase to list them.
-          </p>
-        </div>
-      ) : (
-        <div className="overflow-hidden rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm bg-white/40 dark:bg-zinc-900/10">
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
-              <thead>
-                <tr className="bg-zinc-100 border-b border-zinc-200 text-xs font-bold uppercase tracking-wider text-zinc-500 dark:bg-zinc-900/60 dark:border-zinc-800 dark:text-zinc-400">
-                  <th className="px-5 py-3">Attendee Name</th>
-                  <th className="px-5 py-3">Email Address</th>
-                  <th className="px-5 py-3">RSVP Status</th>
-                  <th className="px-5 py-3">Public Chat Link</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
-                {registrations.map((reg) => (
-                  <tr key={reg.id} className="hover:bg-white/30 dark:hover:bg-zinc-950/10">
-                    <td className="px-5 py-4 font-semibold">{reg.full_name ?? "—"}</td>
-                    <td className="px-5 py-4 text-zinc-500 dark:text-zinc-400">{reg.email ?? "—"}</td>
-                    <td className="px-5 py-4">
-                      <span
-                        className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold capitalize ${
-                          RSVP_STYLES[reg.rsvp_status] ?? RSVP_STYLES.pending
-                        }`}
-                      >
-                        {reg.rsvp_status}
-                      </span>
-                    </td>
-                    <td className="px-5 py-4">
-                      <button
-                        onClick={() => copyLink(reg)}
-                        className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-bold transition-all focus:outline-none ${
-                          copiedId === reg.id
-                            ? "border-green-500/35 bg-green-500/10 text-green-600 dark:text-green-400"
-                            : "border-zinc-200 bg-white hover:border-zinc-400 dark:border-zinc-800 dark:bg-zinc-950 dark:hover:border-zinc-700"
-                        }`}
-                      >
-                        {copiedId === reg.id ? (
-                          <>
-                            <span>✓</span> Copied Link!
-                          </>
-                        ) : (
-                          <>
-                            {/* Copy Icon */}
-                            <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 7.5V6.108c0-1.135.845-2.098 1.976-2.192.373-.03.748-.057 1.123-.08M15.75 18H18a2.25 2.25 0 002.25-2.25V6.108c0-1.135-.845-2.098-1.976-2.192a48.424 48.424 0 00-1.123-.08M15.75 18.75v-1.875a3.375 3.375 0 00-3.375-3.375h-1.5a1.125 1.125 0 01-1.125-1.125v-1.5A3.375 3.375 0 006.375 7.5H5.25m11.9-3.664A2.251 2.251 0 0015 2.25h-1.5a2.251 2.251 0 00-2.15 1.586m5.8 0c.065.21.1.433.1.664v.75h-6V4.5c0-.231.035-.454.1-.664M6.75 7.5H4.875c-.621 0-1.125.504-1.125 1.125v12c0 .621.504 1.125 1.125 1.125h9.75c.621 0 1.125-.504 1.125-1.125V16.5a9 9 0 00-9-9z" />
-                            </svg>
-                            Copy Chat link
-                          </>
-                        )}
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-    </section>
-  );
-}
 
 // ── Chosen Post (scheduling card - Twitter/LinkedIn Mockup) ─────────────
 
