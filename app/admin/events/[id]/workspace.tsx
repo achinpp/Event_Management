@@ -98,7 +98,17 @@ interface EventDetail {
   }>;
 }
 
-const fetcher = (url: string) => fetch(url).then((r) => r.json());
+const fetcher = async (url: string) => {
+  const res = await fetch(url);
+  const data = await res.json();
+  if (res.status === 401 || data?.error === "Unauthorized") {
+    if (typeof window !== "undefined") {
+      window.location.href = "/login";
+    }
+    throw new Error("Unauthorized");
+  }
+  return data;
+};
 
 // ── Collapsible Section Component ───────────────────────────────────────
 

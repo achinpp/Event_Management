@@ -1,5 +1,5 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 
 export interface PenpotMCPTool {
   name: string;
@@ -20,7 +20,7 @@ export class PenpotMCPService {
     }
 
     try {
-      const transport = new SSEClientTransport(new URL(mcpUrl));
+      const transport = new StreamableHTTPClientTransport(new URL(mcpUrl));
       const client = new Client(
         { name: "EventPilot-Agent", version: "1.0.0" },
         { capabilities: {} }

@@ -18,7 +18,17 @@ interface EventRow {
   contact_phone: string | null;
 }
 
-const fetcher = (url: string) => fetch(url).then((r) => r.json());
+const fetcher = async (url: string) => {
+  const res = await fetch(url);
+  const data = await res.json();
+  if (res.status === 401 || data?.error === "Unauthorized") {
+    if (typeof window !== "undefined") {
+      window.location.href = "/login";
+    }
+    throw new Error("Unauthorized");
+  }
+  return data;
+};
 
 export default function AdminPage() {
   const { data, isLoading, mutate } = useSWR<{ events: EventRow[] }>(
@@ -35,8 +45,7 @@ export default function AdminPage() {
 
   async function handleSignOut() {
     await fetch("/api/auth/signout", { method: "POST" });
-    router.refresh();
-    router.push("/login");
+    window.location.href = "/login";
   }
 
   async function createEvent(formData: FormData) {

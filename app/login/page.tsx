@@ -28,8 +28,7 @@ export default function LoginPage() {
         throw new Error(data.error || "Login failed");
       }
 
-      router.refresh();
-      router.push("/admin");
+      window.location.href = "/admin";
     } catch (err: any) {
       setError(err.message || "An unexpected error occurred");
     } finally {

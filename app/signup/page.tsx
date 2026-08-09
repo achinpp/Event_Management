@@ -39,8 +39,8 @@ export default function SignupPage() {
 
       setSuccess(true);
       setTimeout(() => {
-        router.push("/login");
-      }, 2000);
+        window.location.href = "/admin";
+      }, 1000);
     } catch (err: any) {
       setError(err.message || "An unexpected error occurred");
     } finally {
@@ -139,6 +139,7 @@ export default function SignupPage() {
                 <input
                   type="password"
                   required
+                  minLength={6}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="At least 6 characters"
@@ -153,6 +154,7 @@ export default function SignupPage() {
                 <input
                   type="password"
                   required
+                  minLength={6}
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
                   placeholder="••••••••"

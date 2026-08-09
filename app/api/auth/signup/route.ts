@@ -32,10 +32,28 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: error.message }, { status: 400 });
     }
 
-    return NextResponse.json(
+    // Auto sign in user to create a session token
+    const { data: signInData } = await db.auth.signInWithPassword({
+      email,
+      password,
+    });
+
+    const res = NextResponse.json(
       { message: "User registered successfully", user: data.user },
       { status: 201 }
     );
+
+    if (signInData?.session) {
+      res.cookies.set("ep_session", signInData.session.access_token, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "lax",
+        path: "/",
+        maxAge: signInData.session.expires_in,
+      });
+    }
+
+    return res;
   } catch (err: any) {
     console.error("Signup API error:", err);
     return NextResponse.json(
