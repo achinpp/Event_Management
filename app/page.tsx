@@ -7,7 +7,7 @@ export default function Home() {
   const [activeShowcaseTab, setActiveShowcaseTab] = useState<"campaign" | "chatbot">("campaign");
 
   return (
-    <div className="min-h-screen bg-zinc-50 text-zinc-900 transition-colors duration-300 dark:bg-zinc-950 dark:text-zinc-50">
+    <div className="isolate min-h-screen bg-zinc-50 text-zinc-900 transition-colors duration-300 dark:bg-zinc-950 dark:text-zinc-50">
       
       {/* 1. Header/Navigation */}
       <header className="sticky top-0 z-50 w-full border-b border-zinc-200/50 bg-white/85 backdrop-blur-md transition-colors duration-300 dark:border-zinc-800/50 dark:bg-zinc-950/85">

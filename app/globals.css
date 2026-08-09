@@ -12,6 +12,41 @@
   --font-mono: var(--font-geist-mono);
 }
 
+/*
+ * Half-step shades.
+ *
+ * The UI was written against in-between tones (zinc-650, violet-750, red-550…)
+ * that Tailwind's default palette does not ship — it stops at 50/100…900/950.
+ * Those utilities emitted no CSS at all, so ~78 usages across every page were
+ * silently falling back to inherited colours, which is what made the pages drift
+ * apart visually. Each value below is the midpoint of its two neighbours, so the
+ * original intent renders as written.
+ */
+@theme {
+  --color-zinc-150: #ececee;
+  --color-zinc-250: #dcdce0;
+  --color-zinc-350: #bbbbc1;
+  --color-zinc-450: #898992;
+  --color-zinc-455: #86868f;
+  --color-zinc-550: #62626b;
+  --color-zinc-650: #494951;
+  --color-zinc-850: #202023;
+
+  --color-neutral-350: #bcbcbc;
+
+  --color-violet-650: #7531e3;
+  --color-violet-750: #6425c8;
+
+  --color-indigo-550: #5956eb;
+  --color-indigo-650: #493fd8;
+
+  --color-red-550: #e63535;
+  --color-red-650: #cb2121;
+
+  --color-emerald-550: #0ba875;
+  --color-emerald-650: #058760;
+}
+
 @media (prefers-color-scheme: dark) {
   :root {
     --background: #09090b; /* zinc-950 equivalent for premium dark mode */
@@ -37,6 +72,47 @@ h1, h2, h3, h4, h5, h6 {
 
 p, blockquote, li, .pretty-text {
   text-wrap: pretty;
+}
+
+/*
+ * Motion. `animate-fadeIn` was already used on the landing page and in the
+ * workspace but never defined, so tab switches popped in with no transition.
+ */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.animate-fadeIn {
+  animation: fadeIn 0.35s ease-out both;
+}
+
+@keyframes riseIn {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.animate-riseIn {
+  animation: riseIn 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-fadeIn,
+  .animate-riseIn {
+    animation: none;
+  }
 }
 
 /* Custom Scrollbar Styles following web guidance */

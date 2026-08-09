@@ -117,7 +117,7 @@ function CollapsibleSection({
   icon,
   defaultOpen = false,
   children,
-  accentColor = "blue",
+  accentColor = "indigo",
 }: {
   title: string;
   icon: string;
@@ -127,7 +127,7 @@ function CollapsibleSection({
 }) {
   const [open, setOpen] = useState(defaultOpen);
   const colors: Record<string, string> = {
-    blue: "from-blue-500/5 to-indigo-500/5 border-blue-500/10 dark:border-blue-500/20",
+    indigo: "from-indigo-500/5 to-violet-500/5 border-indigo-500/10 dark:border-indigo-500/20",
     purple: "from-purple-500/5 to-violet-500/5 border-purple-500/10 dark:border-purple-500/20",
     green: "from-green-500/5 to-emerald-500/5 border-green-500/10 dark:border-green-500/20",
     amber: "from-amber-500/5 to-orange-500/5 border-amber-500/10 dark:border-amber-500/20",
@@ -136,7 +136,7 @@ function CollapsibleSection({
   };
   return (
     <div
-      className={`rounded-2xl border bg-gradient-to-br ${colors[accentColor] ?? colors.blue} overflow-hidden transition-all`}
+      className={`rounded-2xl border bg-gradient-to-br ${colors[accentColor] ?? colors.indigo} overflow-hidden transition-all`}
     >
       <button
         onClick={() => setOpen(!open)}
@@ -548,7 +548,7 @@ export default function Workspace({ eventId }: { eventId: string }) {
               title="Campaign Overview"
               icon="📋"
               defaultOpen={true}
-              accentColor="blue"
+              accentColor="indigo"
             >
               <p className="text-sm leading-relaxed text-zinc-600 dark:text-zinc-350">
                 {campaignPlan.campaignSummary}
@@ -1078,74 +1078,74 @@ export default function Workspace({ eventId }: { eventId: string }) {
       {/* Edit Event Details Modal */}
       {isEditing && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-2xl rounded-2xl border border-neutral-350 bg-white p-6 shadow-2xl dark:border-neutral-700 dark:bg-neutral-900 animate-fadeIn">
-            <h2 className="text-xl font-bold">Edit Event Details</h2>
+          <div className="animate-fadeIn max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl border border-zinc-200/80 bg-white p-8 shadow-2xl dark:border-zinc-800/80 dark:bg-zinc-900">
+            <h2 className="text-xl font-bold tracking-tight">Edit Event Details</h2>
             <form onSubmit={handleSave} className="mt-4 grid gap-4">
               <div className="grid gap-2">
-                <label className="text-xs font-semibold uppercase opacity-60">Event Title</label>
+                <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">Event Title</label>
                 <input
                   name="title"
                   required
                   defaultValue={event.title}
-                  className="rounded-lg border border-neutral-300 bg-transparent px-3 py-2 text-sm focus:border-blue-500 focus:outline-none dark:border-neutral-700"
+                  className="w-full rounded-xl border border-zinc-200 bg-white/50 px-4 py-2.5 text-sm text-zinc-900 placeholder-zinc-400 transition-all focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 focus:outline-none dark:border-zinc-800 dark:bg-zinc-950/50 dark:text-zinc-100 dark:placeholder-zinc-500 dark:focus:border-indigo-400 dark:focus:ring-indigo-400/20"
                 />
               </div>
               <div className="grid gap-2">
-                <label className="text-xs font-semibold uppercase opacity-60">Description (Chatbot Knowledge Base)</label>
+                <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">Description (Chatbot Knowledge Base)</label>
                 <textarea
                   name="description"
                   required
                   rows={5}
                   defaultValue={event.description ?? ""}
                   placeholder="Describe details for chatbot training..."
-                  className="rounded-lg border border-neutral-300 bg-transparent px-3 py-2 text-sm focus:border-blue-500 focus:outline-none dark:border-neutral-700"
+                  className="w-full rounded-xl border border-zinc-200 bg-white/50 px-4 py-2.5 text-sm text-zinc-900 placeholder-zinc-400 transition-all focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 focus:outline-none dark:border-zinc-800 dark:bg-zinc-950/50 dark:text-zinc-100 dark:placeholder-zinc-500 dark:focus:border-indigo-400 dark:focus:ring-indigo-400/20"
                 />
               </div>
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="grid gap-2">
-                  <label className="text-xs font-semibold uppercase opacity-60">Starts At</label>
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">Starts At</label>
                   <input
                     name="starts_at"
                     type="datetime-local"
                     defaultValue={event.starts_at ? new Date(event.starts_at).toISOString().slice(0, 16) : ""}
-                    className="rounded-lg border border-neutral-300 bg-transparent px-3 py-2 text-sm focus:border-blue-500 focus:outline-none dark:border-neutral-700"
+                    className="w-full rounded-xl border border-zinc-200 bg-white/50 px-4 py-2.5 text-sm text-zinc-900 placeholder-zinc-400 transition-all focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 focus:outline-none dark:border-zinc-800 dark:bg-zinc-950/50 dark:text-zinc-100 dark:placeholder-zinc-500 dark:focus:border-indigo-400 dark:focus:ring-indigo-400/20"
                   />
                 </div>
                 <div className="grid gap-2">
-                  <label className="text-xs font-semibold uppercase opacity-60">Venue</label>
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">Venue</label>
                   <input
                     name="venue"
                     defaultValue={event.venue ?? ""}
-                    className="rounded-lg border border-neutral-300 bg-transparent px-3 py-2 text-sm focus:border-blue-500 focus:outline-none dark:border-neutral-700"
+                    className="w-full rounded-xl border border-zinc-200 bg-white/50 px-4 py-2.5 text-sm text-zinc-900 placeholder-zinc-400 transition-all focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 focus:outline-none dark:border-zinc-800 dark:bg-zinc-950/50 dark:text-zinc-100 dark:placeholder-zinc-500 dark:focus:border-indigo-400 dark:focus:ring-indigo-400/20"
                   />
                 </div>
                 <div className="grid gap-2">
-                  <label className="text-xs font-semibold uppercase opacity-60">Contact Name</label>
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">Contact Name</label>
                   <input
                     name="contact_name"
                     defaultValue={event.contact_name ?? ""}
-                    className="rounded-lg border border-neutral-300 bg-transparent px-3 py-2 text-sm focus:border-blue-500 focus:outline-none dark:border-neutral-700"
+                    className="w-full rounded-xl border border-zinc-200 bg-white/50 px-4 py-2.5 text-sm text-zinc-900 placeholder-zinc-400 transition-all focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 focus:outline-none dark:border-zinc-800 dark:bg-zinc-950/50 dark:text-zinc-100 dark:placeholder-zinc-500 dark:focus:border-indigo-400 dark:focus:ring-indigo-400/20"
                   />
                 </div>
                 <div className="grid gap-2">
-                  <label className="text-xs font-semibold uppercase opacity-60">Contact Email</label>
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">Contact Email</label>
                   <input
                     name="contact_email"
                     type="email"
                     defaultValue={event.contact_email ?? ""}
-                    className="rounded-lg border border-neutral-300 bg-transparent px-3 py-2 text-sm focus:border-blue-500 focus:outline-none dark:border-neutral-700"
+                    className="w-full rounded-xl border border-zinc-200 bg-white/50 px-4 py-2.5 text-sm text-zinc-900 placeholder-zinc-400 transition-all focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 focus:outline-none dark:border-zinc-800 dark:bg-zinc-950/50 dark:text-zinc-100 dark:placeholder-zinc-500 dark:focus:border-indigo-400 dark:focus:ring-indigo-400/20"
                   />
                 </div>
                 <div className="grid gap-2 sm:col-span-2">
-                  <label className="text-xs font-semibold uppercase opacity-60">Contact Phone</label>
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">Contact Phone</label>
                   <input
                     name="contact_phone"
                     defaultValue={event.contact_phone ?? ""}
-                    className="rounded-lg border border-neutral-300 bg-transparent px-3 py-2 text-sm focus:border-blue-500 focus:outline-none dark:border-neutral-700"
+                    className="w-full rounded-xl border border-zinc-200 bg-white/50 px-4 py-2.5 text-sm text-zinc-900 placeholder-zinc-400 transition-all focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 focus:outline-none dark:border-zinc-800 dark:bg-zinc-950/50 dark:text-zinc-100 dark:placeholder-zinc-500 dark:focus:border-indigo-400 dark:focus:ring-indigo-400/20"
                   />
                 </div>
                 <div className="grid gap-2 sm:col-span-2">
-                  <label className="text-xs font-semibold uppercase opacity-60">WhatsApp Invite Lead Days (days before event to send invitations)</label>
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">WhatsApp Invite Lead Days (days before event to send invitations)</label>
                   <input
                     name="invite_lead_days"
                     type="number"
@@ -1153,22 +1153,22 @@ export default function Workspace({ eventId }: { eventId: string }) {
                     max="90"
                     required
                     defaultValue={event.invite_lead_days ?? 7}
-                    className="rounded-lg border border-neutral-300 bg-transparent px-3 py-2 text-sm focus:border-blue-500 focus:outline-none dark:border-neutral-700"
+                    className="w-full rounded-xl border border-zinc-200 bg-white/50 px-4 py-2.5 text-sm text-zinc-900 placeholder-zinc-400 transition-all focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 focus:outline-none dark:border-zinc-800 dark:bg-zinc-950/50 dark:text-zinc-100 dark:placeholder-zinc-500 dark:focus:border-indigo-400 dark:focus:ring-indigo-400/20"
                   />
                 </div>
               </div>
-              <div className="mt-4 flex justify-end gap-3 border-t border-neutral-200 dark:border-neutral-700 pt-4">
+              <div className="mt-4 flex justify-end gap-3 border-t border-zinc-200 pt-5 dark:border-zinc-800">
                 <button
                   type="button"
                   onClick={() => setIsEditing(false)}
-                  className="rounded-lg border border-neutral-300 px-4 py-2 text-sm font-semibold hover:bg-neutral-50 dark:border-neutral-700 dark:hover:bg-neutral-800"
+                  className="cursor-pointer rounded-full border border-zinc-200 px-5 py-2 text-sm font-semibold text-zinc-700 transition-colors hover:bg-zinc-50 dark:border-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-800"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={saving}
-                  className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-500 disabled:opacity-50"
+                  className="inline-flex cursor-pointer items-center justify-center rounded-full bg-gradient-to-r from-violet-600 to-indigo-600 px-6 py-2 text-sm font-semibold text-white shadow-md shadow-indigo-600/20 transition-all hover:scale-[1.02] hover:shadow-indigo-600/35 disabled:opacity-50 disabled:hover:scale-100"
                 >
                   {saving ? "Saving Changes…" : "Save Changes"}
                 </button>

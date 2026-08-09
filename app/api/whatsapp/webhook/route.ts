@@ -12,6 +12,26 @@ const webhookBody = z.object({
   message: z.string().min(1),
 });
 
+// Every stored spelling of the number WhatsApp reported, so an exact-match
+// lookup still finds guests whose CSV row was written in a local or malformed
+// format. Mirrors normalizePhone() in whatsapp-bot.js.
+function phoneVariants(waPhone: string): string[] {
+  const digits = waPhone.replace(/\D/g, "");
+  const variants = new Set<string>([digits]);
+
+  // Sri Lankan numbers: also try the local form and the "country code + trunk 0"
+  // form that upload rows are frequently typed in.
+  if (digits.startsWith("94") && digits.length === 11) {
+    const subscriber = digits.slice(2); // 771234567
+    variants.add("0" + subscriber); // 0771234567
+    variants.add("940" + subscriber); // 940771234567
+    variants.add(subscriber); // 771234567
+  }
+
+  // Stored values may or may not carry a leading "+".
+  return [...variants].flatMap((v) => [v, "+" + v]);
+}
+
 interface RegistrationWithEvent {
   id: string;
   full_name: string | null;
@@ -33,13 +53,17 @@ export async function POST(req: Request) {
     const { phone, message } = parsed.data;
     const db = supabaseAdmin();
 
-    // 1. Find registration record matching the phone number (latest registration first)
+    // 1. Find registration record matching the phone number (latest registration first).
+    // Numbers are stored exactly as the CSV upload provided them, so the same
+    // person may be on file as "+94771234567", "0771234567" or the malformed
+    // "+940771234567". WhatsApp always reports the canonical international form,
+    // so match against every variant that canonicalises to the same number.
     const { data: regs, error: fetchRegError } = await db
       .from("registrations")
       .select(
         "id, full_name, rsvp_status, event_id, events (id, title, starts_at, venue, contact_name, contact_email, contact_phone)"
       )
-      .eq("phone", phone)
+      .in("phone", phoneVariants(phone))
       .order("created_at", { ascending: false });
 
     if (fetchRegError) {

@@ -37,7 +37,7 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="relative flex min-h-screen flex-col items-center justify-center overflow-hidden bg-zinc-50 text-zinc-900 transition-colors duration-300 dark:bg-zinc-950 dark:text-zinc-100 px-6 py-12 antialiased">
+    <div className="relative isolate flex min-h-screen flex-col items-center justify-center overflow-hidden bg-zinc-50 text-zinc-900 transition-colors duration-300 dark:bg-zinc-950 dark:text-zinc-100 px-6 py-12 antialiased">
       
       {/* Back to Home Link */}
       <div className="absolute top-6 left-6">
