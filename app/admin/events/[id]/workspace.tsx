@@ -15,8 +15,6 @@ interface Post {
   final_caption: string | null;
   status: string;
   scheduled_at: string | null;
-  penpot_url?: string | null;
-  penpot_file_id?: string | null;
 }
 
 interface PlannedPost {
@@ -640,18 +638,8 @@ export default function Workspace({ eventId }: { eventId: string }) {
                           disabled={busyImageIndex !== null}
                           className="w-full rounded-xl bg-indigo-600 py-2.5 text-xs font-bold text-white shadow-sm transition-all hover:bg-indigo-500 disabled:opacity-50"
                         >
-                          {busyImageIndex === index ? "⏳ Synthesizing graphic..." : "🎨 Generate Image (Penpot AI)"}
+                          {busyImageIndex === index ? "⏳ Synthesizing graphic..." : "🎨 Generate Image (Gemini AI)"}
                         </button>
-                        {posts[index]?.penpot_url && (
-                          <a
-                            href={posts[index].penpot_url!}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-pink-500/30 bg-pink-500/10 py-2 text-xs font-bold text-pink-600 transition-all hover:bg-pink-500/20 dark:text-pink-400"
-                          >
-                            <span>✏️</span> Edit in Penpot Canvas
-                          </a>
-                        )}
                       </div>
                     </div>
                   ))}
@@ -1025,30 +1013,7 @@ function ChosenPost({ post, onSaved }: { post: Post; onSaved: () => void }) {
                 className="h-48 w-48 w-full object-cover"
               />
             </div>
-            {post.penpot_url && (
-              <div className="flex flex-col gap-1.5">
-                <a
-                  href={post.penpot_url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-pink-500/30 bg-pink-500/10 px-3 py-1.5 text-xs font-bold text-pink-600 hover:bg-pink-500/20 dark:text-pink-400 transition-all"
-                >
-                  <span>✏️</span> Edit in Penpot
-                </a>
-                <button
-                  onClick={async () => {
-                    setBusy("reexport");
-                    await fetch(`/api/posts/${post.id}/reexport`, { method: "POST" });
-                    setBusy(null);
-                    onSaved();
-                  }}
-                  disabled={busy !== null}
-                  className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-zinc-200 bg-zinc-100 px-3 py-1.5 text-xs font-semibold text-zinc-700 hover:bg-zinc-200 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800 disabled:opacity-50"
-                >
-                  <span>🔄</span> Re-Sync Graphic
-                </button>
-              </div>
-            )}
+
           </div>
         )}
         

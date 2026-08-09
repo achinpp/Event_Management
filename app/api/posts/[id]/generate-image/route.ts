@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { supabaseAdmin } from "@/lib/supabase";
-import { generatePenpotPostDesign } from "@/lib/penpot-agent";
+import { generatePostDesign } from "@/lib/gemini-agent";
 import { demoImageUrl } from "@/lib/demo";
 import { getSessionUser } from "@/lib/auth";
 
@@ -59,19 +59,18 @@ export async function POST(
 
   if (process.env.DEMO_MODE === "true") {
     const imageUrl = demoImageUrl(post.variant_index);
-    const penpotUrl = `http://194.233.95.35:9001/#/workspace/file/${id}`;
     const { error: updateError } = await db
       .from("generated_posts")
-      .update({ image_url: imageUrl, penpot_url: penpotUrl, penpot_file_id: id })
+      .update({ image_url: imageUrl })
       .eq("id", id);
     if (updateError) {
       return NextResponse.json({ error: updateError.message }, { status: 500 });
     }
-    return NextResponse.json({ imageUrl, penpotUrl });
+    return NextResponse.json({ imageUrl });
   }
 
   try {
-    const design = await generatePenpotPostDesign({
+    const design = await generatePostDesign({
       postId: id,
       eventId: post.event_id,
       title: event.title,
@@ -85,8 +84,6 @@ export async function POST(
       .from("generated_posts")
       .update({
         image_url: design.imageUrl,
-        penpot_url: design.penpotUrl,
-        penpot_file_id: design.penpotFileId,
       })
       .eq("id", id);
 
@@ -96,8 +93,6 @@ export async function POST(
 
     return NextResponse.json({
       imageUrl: design.imageUrl,
-      penpotUrl: design.penpotUrl,
-      usedFallback: design.usedFallback,
     });
   } catch (err) {
     return NextResponse.json(
@@ -106,4 +101,3 @@ export async function POST(
     );
   }
 }
-

@@ -25,7 +25,7 @@ CREATE TABLE IF NOT EXISTS public.events (
   created_at    timestamptz NOT NULL DEFAULT now()
 );
 
--- Ensure columns exist
+-- Ensure user_id column exists if events was created before
 ALTER TABLE public.events ADD COLUMN IF NOT EXISTS user_id uuid REFERENCES auth.users(id) ON DELETE CASCADE;
 ALTER TABLE public.events ADD COLUMN IF NOT EXISTS invite_lead_days int NOT NULL DEFAULT 7;
 
@@ -94,7 +94,7 @@ LANGUAGE sql STABLE AS $$
 $$;
 
 -- -------------------------------------------------------------
--- PERMISSIVE POLICIES TO PREVENT RLS ERRORS
+-- DISABLE RLS OR ADD PERMISSIVE POLICIES TO PREVENT RLS ERRORS
 -- -------------------------------------------------------------
 
 ALTER TABLE public.events ENABLE ROW LEVEL SECURITY;
