@@ -49,6 +49,16 @@ create unique index registrations_form_response_idx
   on public.registrations (form_response_id) where form_response_id is not null;
 create index registrations_event_idx on public.registrations (event_id, rsvp_status);
 
+create table public.chat_messages (
+  id              uuid primary key default gen_random_uuid(),
+  registration_id uuid not null references public.registrations (id) on delete cascade,
+  role            text not null, -- 'user' | 'assistant'
+  content         text not null,
+  created_at      timestamptz not null default now()
+);
+
+create index chat_messages_reg_idx on public.chat_messages (registration_id, created_at asc);
+
 create table public.event_chunks (
   id         uuid primary key default gen_random_uuid(),
   event_id   uuid not null references public.events (id) on delete cascade,

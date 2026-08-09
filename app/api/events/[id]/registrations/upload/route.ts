@@ -112,22 +112,37 @@ export async function POST(
       );
     }
 
-    // 5. Simultaneously trigger simulated WhatsApp outreach (logging & returning details)
-    const outreachLogs = inserted.map((row) => {
+    // 5. Simultaneously trigger actual WhatsApp outreach via our background service
+    const outreachLogs = [];
+    for (const row of inserted) {
       const templateMessage = `Hi ${row.full_name}! 🚀 You are registered for "${event.title}". Can we count on your attendance? Reply YES to confirm, NO to decline, or ask any questions about the event! Chat link: ${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/chat/${row.chat_token}`;
       
-      const logMessage = `[WhatsApp Outreach] Dispatching invite to: ${row.full_name} (${row.phone}) | Message: "${templateMessage}"`;
-      
-      // Log to server console
-      console.log(logMessage);
-      
-      return {
+      let status = "Delivered (WhatsApp Bot RAG Ready)";
+      try {
+        const waRes = await fetch("http://localhost:5001/send", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            phone: row.phone,
+            message: templateMessage,
+          }),
+        });
+        
+        if (!waRes.ok) {
+          const errPayload = await waRes.json().catch(() => null);
+          status = `Failed to deliver: ${errPayload?.error ?? waRes.statusText}`;
+        }
+      } catch (err: any) {
+        status = `Failed to connect to WhatsApp service: ${err.message}`;
+      }
+
+      outreachLogs.push({
         recipient: row.full_name,
         phone: row.phone,
         message: templateMessage,
-        status: "Delivered (Simulated WhatsApp Bot RAG Ready)",
-      };
-    });
+        status: status,
+      });
+    }
 
     return NextResponse.json({
       success: true,
