@@ -2,6 +2,7 @@ create extension if not exists vector;
 
 create table public.events (
   id            uuid primary key default gen_random_uuid(),
+  user_id       uuid not null references auth.users(id) on delete cascade,
   title         text not null,
   description   text,
   starts_at     timestamptz,
@@ -12,6 +13,7 @@ create table public.events (
   breakdown     jsonb default '[]'::jsonb,   -- orchestrator output, schemaless on purpose
   logo_url      text,
   status        text not null default 'draft',
+  invite_lead_days int not null default 7,
   created_at    timestamptz not null default now()
 );
 
@@ -41,6 +43,7 @@ create table public.registrations (
   rsvp_at          timestamptz,
   chat_token       text not null default replace(gen_random_uuid()::text, '-', ''),
   form_response_id text,
+  invite_sent_at   timestamptz,
   created_at       timestamptz not null default now()
 );
 
@@ -96,17 +99,4 @@ values ('posts', 'posts', true)
 on conflict (id) do nothing;
 
 -- Seed so the UI has data at every phase.
-insert into public.events (title, description, starts_at, venue, contact_name, contact_email)
-values (
-  'TechFusion 2026',
-  'A one-day AI and robotics summit featuring 12 speakers, 4 workshops, and a startup showcase. Free entry for students. Lunch and refreshments provided. Parking available on site. Doors open 8:30 AM.',
-  now() + interval '30 days',
-  'Cinnamon Grand, Colombo',
-  'Priya Fernando',
-  'hello@techfusion.example'
-);
 
--- Seed registration so the chat link works before Phase 5.
-insert into public.registrations (event_id, full_name, email)
-select id, 'Demo Attendee', 'demo@example.com' from public.events
-where title = 'TechFusion 2026';

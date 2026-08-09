@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { supabaseAdmin } from "@/lib/supabase";
 import { embedChunks } from "@/lib/embeddings";
+import { getSessionUser } from "@/lib/auth";
 
 const createEvent = z.object({
   title: z.string().min(1),
@@ -36,11 +37,17 @@ async function chunkAndEmbed(eventId: string, description: string) {
   if (error) throw new Error(error.message);
 }
 
-export async function GET() {
+export async function GET(req: Request) {
+  const user = await getSessionUser(req);
+  if (!user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   const db = supabaseAdmin();
   const { data: events, error } = await db
     .from("events")
     .select("*")
+    .eq("user_id", user.id)
     .order("created_at", { ascending: false });
 
   if (error) {
@@ -73,6 +80,11 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
+  const user = await getSessionUser(req);
+  if (!user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   const parsed = createEvent.safeParse(await req.json().catch(() => null));
   if (!parsed.success) {
     return NextResponse.json(
@@ -84,7 +96,10 @@ export async function POST(req: Request) {
   const db = supabaseAdmin();
   const { data: event, error } = await db
     .from("events")
-    .insert(parsed.data)
+    .insert({
+      ...parsed.data,
+      user_id: user.id,
+    })
     .select()
     .single();
 

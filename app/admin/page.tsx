@@ -25,9 +25,19 @@ export default function AdminPage() {
     "/api/events",
     fetcher
   );
+  const { data: userData } = useSWR<{ user: { email: string; id: string } | null }>(
+    "/api/auth/me",
+    fetcher
+  );
   const router = useRouter();
   const [creating, setCreating] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+
+  async function handleSignOut() {
+    await fetch("/api/auth/signout", { method: "POST" });
+    router.refresh();
+    router.push("/login");
+  }
 
   async function createEvent(formData: FormData) {
     setCreating(true);
@@ -79,7 +89,18 @@ export default function AdminPage() {
             </span>
           </Link>
 
-          <nav className="flex gap-4">
+          <nav className="flex items-center gap-6">
+            {userData?.user && (
+              <span className="text-xs text-zinc-500 dark:text-zinc-400 select-none">
+                Logged in as <strong className="text-zinc-700 dark:text-zinc-300">{userData.user.email}</strong>
+              </span>
+            )}
+            <button
+              onClick={handleSignOut}
+              className="text-xs font-semibold text-red-500 hover:text-red-600 transition-colors cursor-pointer focus:outline-none"
+            >
+              Sign Out
+            </button>
             <Link
               href="/"
               className="text-xs font-semibold text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200"

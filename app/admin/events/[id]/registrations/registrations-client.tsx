@@ -13,6 +13,7 @@ interface EventDetail {
     starts_at: string | null;
     venue: string | null;
     status: string;
+    invite_lead_days?: number;
   };
   registrations: Array<{
     id: string;

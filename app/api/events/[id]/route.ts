@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { supabaseAdmin } from "@/lib/supabase";
 import { embedChunks } from "@/lib/embeddings";
+import { getSessionUser } from "@/lib/auth";
 
 const updateEventSchema = z.object({
   title: z.string().min(1).optional(),
@@ -13,6 +14,7 @@ const updateEventSchema = z.object({
   contact_phone: z.string().nullable().optional(),
   logo_url: z.string().nullable().optional(),
   status: z.string().optional(),
+  invite_lead_days: z.number().int().nonnegative().optional(),
 });
 
 function paragraphChunks(text: string): string[] {
@@ -41,9 +43,14 @@ async function chunkAndEmbed(eventId: string, description: string) {
 // The workspace polls this every 2s (skeletons during generation, and the
 // live registrations table in phase 5).
 export async function GET(
-  _req: Request,
+  req: Request,
   ctx: { params: Promise<{ id: string }> }
 ) {
+  const user = await getSessionUser(req);
+  if (!user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   const { id } = await ctx.params;
   const db = supabaseAdmin();
 
@@ -69,6 +76,11 @@ export async function GET(
     return NextResponse.json({ error: "event not found" }, { status: 404 });
   }
 
+  // Verify ownership
+  if (eventRes.data.user_id !== user.id) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
   return NextResponse.json({
     event: eventRes.data,
     posts: postsRes.data,
@@ -81,6 +93,11 @@ export async function PATCH(
   req: Request,
   ctx: { params: Promise<{ id: string }> }
 ) {
+  const user = await getSessionUser(req);
+  if (!user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   const { id } = await ctx.params;
   const parsed = updateEventSchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) {
@@ -91,6 +108,24 @@ export async function PATCH(
   }
 
   const db = supabaseAdmin();
+
+  // Verify ownership before update
+  const { data: existingEvent, error: findError } = await db
+    .from("events")
+    .select("user_id")
+    .eq("id", id)
+    .maybeSingle();
+
+  if (findError) {
+    return NextResponse.json({ error: findError.message }, { status: 500 });
+  }
+  if (!existingEvent) {
+    return NextResponse.json({ error: "event not found" }, { status: 404 });
+  }
+  if (existingEvent.user_id !== user.id) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
   const { data: event, error } = await db
     .from("events")
     .update(parsed.data)
@@ -120,11 +155,34 @@ export async function PATCH(
 
 // Delete event (referencing generated_posts, registrations, and chunks cascade-delete automatically)
 export async function DELETE(
-  _req: Request,
+  req: Request,
   ctx: { params: Promise<{ id: string }> }
 ) {
+  const user = await getSessionUser(req);
+  if (!user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   const { id } = await ctx.params;
   const db = supabaseAdmin();
+
+  // Verify ownership before delete
+  const { data: existingEvent, error: findError } = await db
+    .from("events")
+    .select("user_id")
+    .eq("id", id)
+    .maybeSingle();
+
+  if (findError) {
+    return NextResponse.json({ error: findError.message }, { status: 500 });
+  }
+  if (!existingEvent) {
+    return NextResponse.json({ error: "event not found" }, { status: 404 });
+  }
+  if (existingEvent.user_id !== user.id) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
   const { error } = await db.from("events").delete().eq("id", id);
 
   if (error) {

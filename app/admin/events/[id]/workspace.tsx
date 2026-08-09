@@ -15,6 +15,8 @@ interface Post {
   final_caption: string | null;
   status: string;
   scheduled_at: string | null;
+  penpot_url?: string | null;
+  penpot_file_id?: string | null;
 }
 
 interface PlannedPost {
@@ -81,6 +83,7 @@ interface EventDetail {
     contact_email?: string | null;
     contact_phone?: string | null;
     logo_url?: string | null;
+    invite_lead_days?: number;
   };
   posts: Post[];
   registrations: Array<{
@@ -269,6 +272,7 @@ export default function Workspace({ eventId }: { eventId: string }) {
       contact_name: (formData.get("contact_name") as string) || null,
       contact_email: (formData.get("contact_email") as string) || null,
       contact_phone: (formData.get("contact_phone") as string) || null,
+      invite_lead_days: Number(formData.get("invite_lead_days") ?? 7),
     };
     const res = await fetch(`/api/events/${eventId}`, {
       method: "PATCH",
@@ -620,13 +624,25 @@ export default function Workspace({ eventId }: { eventId: string }) {
                         </div>
                       </div>
 
-                      <button
-                        onClick={() => generateImageForPost(index)}
-                        disabled={busyImageIndex !== null}
-                        className="mt-5 w-full rounded-xl bg-indigo-600 py-2.5 text-xs font-bold text-white shadow-sm transition-all hover:bg-indigo-500 disabled:opacity-50"
-                      >
-                        {busyImageIndex === index ? "⏳ Synthesizing graphic..." : "🎨 Generate Image"}
-                      </button>
+                      <div className="mt-5 flex flex-col gap-2">
+                        <button
+                          onClick={() => generateImageForPost(index)}
+                          disabled={busyImageIndex !== null}
+                          className="w-full rounded-xl bg-indigo-600 py-2.5 text-xs font-bold text-white shadow-sm transition-all hover:bg-indigo-500 disabled:opacity-50"
+                        >
+                          {busyImageIndex === index ? "⏳ Synthesizing graphic..." : "🎨 Generate Image (Penpot AI)"}
+                        </button>
+                        {posts[index]?.penpot_url && (
+                          <a
+                            href={posts[index].penpot_url!}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-pink-500/30 bg-pink-500/10 py-2 text-xs font-bold text-pink-600 transition-all hover:bg-pink-500/20 dark:text-pink-400"
+                          >
+                            <span>✏️</span> Edit in Penpot Canvas
+                          </a>
+                        )}
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -907,6 +923,18 @@ export default function Workspace({ eventId }: { eventId: string }) {
                     className="rounded-lg border border-neutral-300 bg-transparent px-3 py-2 text-sm focus:border-blue-500 focus:outline-none dark:border-neutral-700"
                   />
                 </div>
+                <div className="grid gap-2 sm:col-span-2">
+                  <label className="text-xs font-semibold uppercase opacity-60">WhatsApp Invite Lead Days (days before event to send invitations)</label>
+                  <input
+                    name="invite_lead_days"
+                    type="number"
+                    min="0"
+                    max="90"
+                    required
+                    defaultValue={event.invite_lead_days ?? 7}
+                    className="rounded-lg border border-neutral-300 bg-transparent px-3 py-2 text-sm focus:border-blue-500 focus:outline-none dark:border-neutral-700"
+                  />
+                </div>
               </div>
               <div className="mt-4 flex justify-end gap-3 border-t border-neutral-200 dark:border-neutral-700 pt-4">
                 <button
@@ -979,12 +1007,38 @@ function ChosenPost({ post, onSaved }: { post: Post; onSaved: () => void }) {
       <div className="flex flex-col gap-6 lg:flex-row">
         {/* Mock Post Composer image */}
         {post.image_url && (
-          <div className="w-full lg:w-48 shrink-0 overflow-hidden rounded-xl border border-zinc-200 dark:border-zinc-800 shadow-sm bg-zinc-150">
-            <img
-              src={post.image_url}
-              alt="Chosen"
-              className="h-48 w-48 w-full object-cover"
-            />
+          <div className="w-full lg:w-48 shrink-0 flex flex-col gap-2">
+            <div className="overflow-hidden rounded-xl border border-zinc-200 dark:border-zinc-800 shadow-sm bg-zinc-150">
+              <img
+                src={post.image_url}
+                alt="Chosen"
+                className="h-48 w-48 w-full object-cover"
+              />
+            </div>
+            {post.penpot_url && (
+              <div className="flex flex-col gap-1.5">
+                <a
+                  href={post.penpot_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-pink-500/30 bg-pink-500/10 px-3 py-1.5 text-xs font-bold text-pink-600 hover:bg-pink-500/20 dark:text-pink-400 transition-all"
+                >
+                  <span>✏️</span> Edit in Penpot
+                </a>
+                <button
+                  onClick={async () => {
+                    setBusy("reexport");
+                    await fetch(`/api/posts/${post.id}/reexport`, { method: "POST" });
+                    setBusy(null);
+                    onSaved();
+                  }}
+                  disabled={busy !== null}
+                  className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-zinc-200 bg-zinc-100 px-3 py-1.5 text-xs font-semibold text-zinc-700 hover:bg-zinc-200 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800 disabled:opacity-50"
+                >
+                  <span>🔄</span> Re-Sync Graphic
+                </button>
+              </div>
+            )}
           </div>
         )}
         

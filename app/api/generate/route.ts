@@ -4,6 +4,7 @@ import { google } from "@ai-sdk/google";
 import { generateObject } from "ai";
 import { supabaseAdmin } from "@/lib/supabase";
 import { demoCampaignPlan } from "@/lib/demo";
+import { getSessionUser } from "@/lib/auth";
 
 export const maxDuration = 300;
 export const runtime = "nodejs";
@@ -68,6 +69,7 @@ const campaignPlanSchema = z.object({
 
 interface EventRow {
   id: string;
+  user_id: string;
   title: string;
   description: string | null;
   starts_at: string | null;
@@ -92,6 +94,11 @@ function eventFacts(event: EventRow): string {
 }
 
 export async function POST(req: Request) {
+  const user = await getSessionUser(req);
+  if (!user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   const body = await req.json().catch(() => null);
   const eventId: string | undefined = body?.eventId;
   if (!eventId) {
@@ -106,6 +113,11 @@ export async function POST(req: Request) {
     .single<EventRow>();
   if (eventError || !event) {
     return NextResponse.json({ error: "event not found" }, { status: 404 });
+  }
+
+  // Verify ownership
+  if (event.user_id !== user.id) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
 

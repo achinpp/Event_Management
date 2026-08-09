@@ -18,7 +18,7 @@ export async function POST(
     // 1. Verify event exists
     const { data: event, error: eventError } = await db
       .from("events")
-      .select("id, title")
+      .select("id, title, starts_at, invite_lead_days")
       .eq("id", eventId)
       .maybeSingle();
 
@@ -27,6 +27,24 @@ export async function POST(
         { error: "Event not found" },
         { status: 404 }
       );
+    }
+
+    // Calculate timing
+    const startsAtStr = event.starts_at;
+    const inviteLeadDays = event.invite_lead_days ?? 7;
+    
+    let shouldSendNow = true;
+    let sendAtTime = 0;
+    
+    if (startsAtStr) {
+      const startsAt = new Date(startsAtStr).getTime();
+      const leadMs = inviteLeadDays * 24 * 60 * 60 * 1000;
+      sendAtTime = startsAt - leadMs;
+      
+      const now = Date.now();
+      if (sendAtTime > now) {
+        shouldSendNow = false;
+      }
     }
 
     // 2. Parse request body
@@ -85,6 +103,7 @@ export async function POST(
           email: guest.email.trim(),
           phone: guest.phone.trim(),
           rsvp_status: "pending",
+          invite_sent_at: shouldSendNow ? new Date().toISOString() : null,
         });
       }
     }
@@ -103,7 +122,7 @@ export async function POST(
     const { data: inserted, error: insertError } = await db
       .from("registrations")
       .insert(newGuestsToInsert)
-      .select("id, full_name, email, phone, chat_token");
+      .select("id, full_name, email, phone, chat_token, invite_sent_at");
 
     if (insertError) {
       return NextResponse.json(
@@ -112,28 +131,36 @@ export async function POST(
       );
     }
 
-    // 5. Simultaneously trigger actual WhatsApp outreach via our background service
+    // 5. Trigger actual WhatsApp outreach via our background queue (if shouldSendNow)
     const outreachLogs = [];
     for (const row of inserted) {
       const templateMessage = `Hi ${row.full_name}! 🚀 You are registered for "${event.title}". Can we count on your attendance? Reply YES to confirm, NO to decline, or ask any questions about the event! Chat link: ${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/chat/${row.chat_token}`;
       
       let status = "Delivered (WhatsApp Bot RAG Ready)";
-      try {
-        const waRes = await fetch("http://localhost:5001/send", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            phone: row.phone,
-            message: templateMessage,
-          }),
-        });
-        
-        if (!waRes.ok) {
-          const errPayload = await waRes.json().catch(() => null);
-          status = `Failed to deliver: ${errPayload?.error ?? waRes.statusText}`;
+      
+      if (!shouldSendNow) {
+        status = `Scheduled (will send on ${new Date(sendAtTime).toLocaleString()})`;
+      } else {
+        try {
+          const waRes = await fetch("http://localhost:5001/send", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              phone: row.phone,
+              message: templateMessage,
+              recipient: row.full_name,
+            }),
+          });
+          
+          if (!waRes.ok) {
+            const errPayload = await waRes.json().catch(() => null);
+            status = `Failed to queue: ${errPayload?.error ?? waRes.statusText}`;
+          } else {
+            status = "Queued for human-simulated delivery";
+          }
+        } catch (err: any) {
+          status = `Failed to connect to WhatsApp service: ${err.message}`;
         }
-      } catch (err: any) {
-        status = `Failed to connect to WhatsApp service: ${err.message}`;
       }
 
       outreachLogs.push({
