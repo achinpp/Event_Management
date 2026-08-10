@@ -55,37 +55,61 @@ export async function listChannels(): Promise<BufferChannel[]> {
 
 // createPost per the live docs: customScheduled + dueAt (ISO 8601 UTC),
 // optional image attached by public URL (Buffer's servers fetch it).
+// Supports automatic and notification schedulingType with Instagram metadata support.
 export async function createScheduledPost(opts: {
   channelId: string;
   text: string;
   dueAt: string;
   imageUrl?: string;
+  service?: string;
 }): Promise<{ id: string; dueAt: string | null }> {
-  const inputFields = [
-    `text: ${JSON.stringify(opts.text)}`,
-    `channelId: ${JSON.stringify(opts.channelId)}`,
-    `schedulingType: automatic`,
-    `mode: customScheduled`,
-    `dueAt: ${JSON.stringify(opts.dueAt)}`,
-  ];
-  if (opts.imageUrl) {
-    inputFields.push(
-      `assets: [{ image: { url: ${JSON.stringify(opts.imageUrl)} } }]`
+  const isInstagram = opts.service ? opts.service.toLowerCase().includes("instagram") : true;
+
+  const executeCreatePost = async (schedulingType: "automatic" | "notification") => {
+    const inputFields = [
+      `text: ${JSON.stringify(opts.text)}`,
+      `channelId: ${JSON.stringify(opts.channelId)}`,
+      `schedulingType: ${schedulingType}`,
+      `mode: customScheduled`,
+      `dueAt: ${JSON.stringify(opts.dueAt)}`,
+    ];
+
+    // Fallback public event placeholder image for Instagram if no image provided
+    const imgUrl = opts.imageUrl || (isInstagram ? "https://images.unsplash.com/photo-1540575467063-178a50c2df87?w=800" : undefined);
+    if (imgUrl) {
+      inputFields.push(
+        `assets: [{ image: { url: ${JSON.stringify(imgUrl)} } }]`
+      );
+    }
+
+    if (isInstagram || schedulingType === "notification") {
+      inputFields.push(
+        `metadata: { instagram: { type: post, shouldShareToFeed: true } }`
+      );
+    }
+
+    const data = await gql<{
+      createPost: { post?: { id: string; dueAt: string | null }; message?: string };
+    }>(
+      `mutation CreatePost {
+        createPost(input: { ${inputFields.join(", ")} }) {
+          ... on PostActionSuccess { post { id dueAt } }
+          ... on MutationError { message }
+        }
+      }`
     );
+    return data.createPost;
+  };
+
+  // Try notification scheduling first if service is instagram, or fallback if required
+  let result = await executeCreatePost(isInstagram ? "notification" : "automatic");
+
+  if (!result?.post && result?.message?.includes("notification scheduling")) {
+    result = await executeCreatePost("notification");
   }
 
-  const data = await gql<{
-    createPost: { post?: { id: string; dueAt: string | null }; message?: string };
-  }>(
-    `mutation CreatePost {
-      createPost(input: { ${inputFields.join(", ")} }) {
-        ... on PostActionSuccess { post { id dueAt } }
-        ... on MutationError { message }
-      }
-    }`
-  );
-  if (!data.createPost?.post) {
-    throw new Error(data.createPost?.message ?? "Buffer createPost failed");
+  if (!result?.post) {
+    throw new Error(result?.message ?? "Buffer createPost failed");
   }
-  return data.createPost.post;
+  return result.post;
 }
