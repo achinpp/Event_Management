@@ -15,6 +15,7 @@ export async function POST(
 ) {
   const user = await getSessionUser(req);
   if (!user) {
+    console.warn(`[API generate-image] ❌ Unauthorized request for post ${(await ctx.params).id}`);
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -35,11 +36,14 @@ export async function POST(
     .maybeSingle();
 
   if (postError) {
+    console.error(`[API generate-image] ❌ DB error fetching post ${id}:`, postError.message);
     return NextResponse.json({ error: postError.message }, { status: 500 });
   }
   if (!post) {
+    console.warn(`[API generate-image] ❌ Post ${id} not found`);
     return NextResponse.json({ error: "post not found" }, { status: 404 });
   }
+  console.log(`[API generate-image] ✅ Found post ${id}, event_id=${post.event_id}`);
 
   const { data: event, error: eventError } = await db
     .from("events")
@@ -70,6 +74,8 @@ export async function POST(
   }
 
   try {
+    console.log(`[API generate-image] 🚀 Calling generatePostDesign for post ${id}...`);
+    const designStart = Date.now();
     const design = await generatePostDesign({
       postId: id,
       eventId: post.event_id,
@@ -88,13 +94,19 @@ export async function POST(
       .eq("id", id);
 
     if (updateError) {
+      console.error(`[API generate-image] ❌ Failed to save image_url for post ${id}:`, updateError.message);
       return NextResponse.json({ error: updateError.message }, { status: 500 });
     }
+
+    const designElapsed = ((Date.now() - designStart) / 1000).toFixed(1);
+    const isDataUri = design.imageUrl.startsWith("data:");
+    console.log(`[API generate-image] ✅ Complete in ${designElapsed}s — ${isDataUri ? "Data URI fallback" : "Storage URL"} (url length: ${design.imageUrl.length})`);
 
     return NextResponse.json({
       imageUrl: design.imageUrl,
     });
   } catch (err) {
+    console.error(`[API generate-image] ❌ Exception for post ${id}:`, err instanceof Error ? err.message : err);
     return NextResponse.json(
       { error: err instanceof Error ? err.message : "Failed to generate design" },
       { status: 500 }

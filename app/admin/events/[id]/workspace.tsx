@@ -172,6 +172,7 @@ export default function Workspace({ eventId }: { eventId: string }) {
   const [savingAllPairs, setSavingAllPairs] = useState(false);
   const [refreshKey, setRefreshKey] = useState(Date.now());
   const [error, setError] = useState<string | null>(null);
+  const [imageGenStatus, setImageGenStatus] = useState<Record<number, string>>({});
   const [selectedImage, setSelectedImage] = useState<number | null>(null);
   const [selectedCaption, setSelectedCaption] = useState<number | null>(null);
   const [isEditing, setIsEditing] = useState(false);
@@ -189,35 +190,88 @@ export default function Workspace({ eventId }: { eventId: string }) {
   const campaignPlan = event.breakdown;
   const savedPairs = posts.filter((p) => p.final_caption !== null);
 
-  async function runImageQueue(targetPosts?: Post[]) {
+  async function runImageQueue(targetPosts?: Post[], planOverride?: CampaignPlan) {
     const listToProcess = targetPosts ?? posts;
-    if (!campaignPlan?.postSequence || listToProcess.length === 0) return;
+    const plan = planOverride ?? campaignPlan;
+    console.log(`[🎨 Image Queue] Starting queue with ${listToProcess.length} posts`);
+    console.log(`[🎨 Image Queue] postSequence available: ${!!plan?.postSequence} (${plan?.postSequence?.length ?? 0} items)`);
+    if (!plan?.postSequence || listToProcess.length === 0) {
+      console.warn(`[🎨 Image Queue] Aborted: no postSequence or empty list`);
+      return;
+    }
     setIsQueueRunning(true);
     setError(null);
+    setImageGenStatus({});
+    const startTime = Date.now();
+    let successCount = 0;
+    let skipCount = 0;
+    let failCount = 0;
+
     for (let i = 0; i < listToProcess.length; i++) {
       const p = listToProcess[i];
-      if (!p.image_url) {
-        setQueueIndex(i);
-        const imageBrief = campaignPlan.postSequence[i]?.imageBrief ?? "Event poster design";
+      if (p.image_url) {
+        console.log(`[🎨 Image Queue] Post #${i + 1} (${p.id}) — already has image, skipping`);
+        skipCount++;
+        setImageGenStatus(prev => ({ ...prev, [i]: "skipped" }));
+        continue;
+      }
+
+      setQueueIndex(i);
+      setImageGenStatus(prev => ({ ...prev, [i]: "generating" }));
+      const imageBrief = plan.postSequence[i]?.imageBrief ?? "Event poster design";
+      console.log(`[🎨 Image Queue] Post #${i + 1} (${p.id}) — sending request...`);
+      console.log(`[🎨 Image Queue]   imageBrief: "${imageBrief.substring(0, 80)}..."`);
+
+      const itemStart = Date.now();
+      try {
         const res = await fetch(`/api/posts/${p.id}/generate-image`, {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ imageBrief }),
         });
+        const elapsed = ((Date.now() - itemStart) / 1000).toFixed(1);
+
         if (!res.ok) {
           const payload = await res.json().catch(() => null);
-          console.warn(`Image queue item ${i} failed:`, payload?.error);
+          console.error(`[🎨 Image Queue] ❌ Post #${i + 1} FAILED (${res.status}) after ${elapsed}s:`, payload?.error);
+          setImageGenStatus(prev => ({ ...prev, [i]: `failed: ${payload?.error ?? res.status}` }));
+          failCount++;
+        } else {
+          const payload = await res.json().catch(() => null);
+          const isDataUri = payload?.imageUrl?.startsWith("data:");
+          console.log(`[🎨 Image Queue] ✅ Post #${i + 1} OK in ${elapsed}s — ${isDataUri ? "Data URI (storage fallback)" : "Storage URL"}`);
+          setImageGenStatus(prev => ({ ...prev, [i]: isDataUri ? "done (data-uri)" : "done" }));
+          successCount++;
         }
-        await mutate();
+      } catch (err) {
+        const elapsed = ((Date.now() - itemStart) / 1000).toFixed(1);
+        console.error(`[🎨 Image Queue] ❌ Post #${i + 1} NETWORK ERROR after ${elapsed}s:`, err);
+        setImageGenStatus(prev => ({ ...prev, [i]: `network-error` }));
+        failCount++;
       }
+      // Refresh data + force image cache-bust so the new image renders immediately
+      setRefreshKey(Date.now());
+      await mutate();
+      // Small delay to let the UI render the new image before starting the next one
+      await new Promise(r => setTimeout(r, 500));
     }
+
+    const totalElapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+    console.log(`[🎨 Image Queue] ══════════════════════════════════════`);
+    console.log(`[🎨 Image Queue] Queue complete in ${totalElapsed}s`);
+    console.log(`[🎨 Image Queue]   ✅ Success: ${successCount}  ⏭️ Skipped: ${skipCount}  ❌ Failed: ${failCount}`);
+    console.log(`[🎨 Image Queue] ══════════════════════════════════════`);
     setQueueIndex(null);
     setIsQueueRunning(false);
   }
 
+  // Also update postSequence reference inside the queue for single-item calls
+  const activePlan = campaignPlan;
+
   async function generate() {
     setGenerating(true);
     setError(null);
+    console.log(`[🚀 Generate] Starting campaign generation for event ${eventId}`);
     const res = await fetch("/api/generate", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -226,15 +280,22 @@ export default function Workspace({ eventId }: { eventId: string }) {
     setGenerating(false);
     if (!res.ok) {
       const json = await res.json().catch(() => null);
+      console.error(`[🚀 Generate] ❌ Campaign generation failed (${res.status}):`, json?.error);
       setError(json?.error ?? `generate failed (${res.status})`);
       return;
     }
     const json = await res.json();
-    await mutate();
+    console.log(`[🚀 Generate] ✅ Campaign generated, ${json?.posts?.length ?? 0} posts created`);
     
-    // Auto-trigger image generation queue for all posts
+    // Fetch fresh SWR data so we get the updated campaignPlan with postSequence
+    const freshData = await mutate();
+    console.log(`[🚀 Generate] SWR refreshed, postSequence available: ${!!freshData?.event?.breakdown?.postSequence}`);
+    
+    // Auto-trigger image generation queue for all posts, passing the fresh plan
     if (json?.posts && Array.isArray(json.posts)) {
-      runImageQueue(json.posts);
+      const freshPlan = freshData?.event?.breakdown as CampaignPlan | undefined;
+      console.log(`[🚀 Generate] Starting image queue with freshPlan (${freshPlan?.postSequence?.length ?? 0} items)`);
+      runImageQueue(json.posts, freshPlan);
     }
   }
 
@@ -285,21 +346,49 @@ export default function Workspace({ eventId }: { eventId: string }) {
   }
 
   async function generateImageForPost(postIndex: number) {
-    if (!campaignPlan?.postSequence?.[postIndex]) return;
+    console.log(`[🎨 Single Image] Generating for post index #${postIndex}`);
+    if (!campaignPlan?.postSequence?.[postIndex]) {
+      console.warn(`[🎨 Single Image] No postSequence at index ${postIndex}`);
+      return;
+    }
     const post = posts[postIndex];
-    if (!post) return;
+    if (!post) {
+      console.warn(`[🎨 Single Image] No DB post at index ${postIndex}`);
+      return;
+    }
     setBusyImageIndex(postIndex);
+    setImageGenStatus(prev => ({ ...prev, [postIndex]: "generating" }));
     setError(null);
 
-    const res = await fetch(`/api/posts/${post.id}/generate-image`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ imageBrief: campaignPlan.postSequence[postIndex].imageBrief }),
-    });
+    const imageBrief = campaignPlan.postSequence[postIndex].imageBrief;
+    console.log(`[🎨 Single Image] Post ID: ${post.id}`);
+    console.log(`[🎨 Single Image] Brief: "${imageBrief.substring(0, 100)}..."`);
 
-    if (!res.ok) {
-      const payload = await res.json().catch(() => null);
-      setError(payload?.error ?? "Image generation failed");
+    const itemStart = Date.now();
+    try {
+      const res = await fetch(`/api/posts/${post.id}/generate-image`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ imageBrief }),
+      });
+      const elapsed = ((Date.now() - itemStart) / 1000).toFixed(1);
+
+      if (!res.ok) {
+        const payload = await res.json().catch(() => null);
+        console.error(`[🎨 Single Image] ❌ FAILED (${res.status}) after ${elapsed}s:`, payload?.error);
+        setError(payload?.error ?? "Image generation failed");
+        setImageGenStatus(prev => ({ ...prev, [postIndex]: `failed: ${payload?.error ?? res.status}` }));
+      } else {
+        const payload = await res.json().catch(() => null);
+        const isDataUri = payload?.imageUrl?.startsWith("data:");
+        console.log(`[🎨 Single Image] ✅ OK in ${elapsed}s — ${isDataUri ? "Data URI (storage fallback)" : "Storage URL"}`);
+        setImageGenStatus(prev => ({ ...prev, [postIndex]: isDataUri ? "done (data-uri)" : "done" }));
+      }
+    } catch (err) {
+      const elapsed = ((Date.now() - itemStart) / 1000).toFixed(1);
+      console.error(`[🎨 Single Image] ❌ NETWORK ERROR after ${elapsed}s:`, err);
+      setError("Network error during image generation");
+      setImageGenStatus(prev => ({ ...prev, [postIndex]: "network-error" }));
     }
 
     setBusyImageIndex(null);
@@ -762,7 +851,7 @@ export default function Workspace({ eventId }: { eventId: string }) {
                           </div>
 
                           {/* Image Box */}
-                          <div className="mb-4 overflow-hidden rounded-xl border border-zinc-200 bg-zinc-100 dark:border-zinc-800 dark:bg-zinc-900">
+                          <div className="relative mb-4 overflow-hidden rounded-xl border border-zinc-200 bg-zinc-100 dark:border-zinc-800 dark:bg-zinc-900">
                             {imageUrl ? (
                               <img
                                 src={imageUrl}
@@ -774,14 +863,42 @@ export default function Workspace({ eventId }: { eventId: string }) {
                                 }}
                               />
                             ) : isQueueActiveThis || isBusyImage ? (
-                              <div className="flex aspect-square w-full animate-pulse flex-col items-center justify-center p-4 text-center text-xs font-semibold text-indigo-600 dark:text-indigo-400">
-                                <span className="text-xl mb-1">🎨</span>
-                                <span>Synthesizing graphic with Gemini AI…</span>
+                              <div className="relative flex aspect-square w-full flex-col items-center justify-center p-4 text-center bg-gradient-to-br from-indigo-50 to-violet-50 dark:from-indigo-950/40 dark:to-violet-950/40">
+                                {/* Animated spinner ring */}
+                                <div className="relative mb-4">
+                                  <div className="h-16 w-16 rounded-full border-4 border-indigo-200 dark:border-indigo-800" />
+                                  <div className="absolute inset-0 h-16 w-16 rounded-full border-4 border-transparent border-t-indigo-600 dark:border-t-indigo-400 animate-spin" />
+                                  <span className="absolute inset-0 flex items-center justify-center text-2xl">🎨</span>
+                                </div>
+                                <span className="text-sm font-bold text-indigo-700 dark:text-indigo-300 animate-pulse">
+                                  Generating with Gemini AI…
+                                </span>
+                                <span className="mt-1.5 text-[11px] text-indigo-500/80 dark:text-indigo-400/70">
+                                  This may take 15-30 seconds
+                                </span>
+                                {/* Status badge */}
+                                {imageGenStatus[index] && (
+                                  <span className="mt-3 inline-flex items-center gap-1.5 rounded-full bg-indigo-600/10 px-3 py-1 text-[10px] font-bold text-indigo-600 dark:text-indigo-400">
+                                    <span className="h-1.5 w-1.5 rounded-full bg-indigo-500 animate-pulse" />
+                                    {imageGenStatus[index]}
+                                  </span>
+                                )}
                               </div>
                             ) : (
-                              <div className="flex aspect-square w-full flex-col items-center justify-center p-4 text-center text-xs font-semibold opacity-50">
-                                <span className="text-xl mb-1">🖼️</span>
-                                <span>No graphic generated yet</span>
+                              <div className="flex aspect-square w-full flex-col items-center justify-center p-4 text-center">
+                                <span className="text-3xl mb-2 opacity-40">🖼️</span>
+                                <span className="text-xs font-semibold opacity-50">No graphic generated yet</span>
+                                {imageGenStatus[index] && imageGenStatus[index] !== "skipped" && (
+                                  <span className={`mt-2 rounded-full px-2.5 py-0.5 text-[10px] font-bold ${
+                                    imageGenStatus[index]?.startsWith("failed") || imageGenStatus[index] === "network-error"
+                                      ? "bg-red-500/10 text-red-600 dark:text-red-400"
+                                      : imageGenStatus[index]?.startsWith("done")
+                                        ? "bg-green-500/10 text-green-600 dark:text-green-400"
+                                        : "bg-zinc-200 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400"
+                                  }`}>
+                                    {imageGenStatus[index]}
+                                  </span>
+                                )}
                               </div>
                             )}
                           </div>
