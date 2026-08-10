@@ -189,6 +189,8 @@ export default function Workspace({ eventId }: { eventId: string }) {
   const { event, posts } = data;
   const campaignPlan = event.breakdown;
   const savedPairs = posts.filter((p) => p.final_caption !== null);
+  const [autoScheduling, setAutoScheduling] = useState(false);
+  const [autoScheduleResult, setAutoScheduleResult] = useState<string | null>(null);
 
   async function runImageQueue(targetPosts?: Post[], planOverride?: CampaignPlan) {
     const listToProcess = targetPosts ?? posts;
@@ -1164,14 +1166,56 @@ export default function Workspace({ eventId }: { eventId: string }) {
             {/* 3. Saved Campaign Pairs Scheduling List */}
             {savedPairs.length > 0 && (
               <div className="space-y-6">
-                <div className="flex items-center justify-between border-b border-zinc-200 pb-3 dark:border-zinc-800">
-                  <h3 className="text-sm font-bold uppercase tracking-wider text-indigo-650 dark:text-indigo-400">
-                    3 · Dispatch Scheduler ({savedPairs.length} Saved Pairs)
-                  </h3>
-                  <span className="text-xs text-zinc-400">
-                    Schedule publish dates for all saved campaign pairs
-                  </span>
+                <div className="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-200 pb-3 dark:border-zinc-800">
+                  <div>
+                    <h3 className="text-sm font-bold uppercase tracking-wider text-indigo-650 dark:text-indigo-400">
+                      3 · Dispatch Scheduler ({savedPairs.length} Saved Pairs)
+                    </h3>
+                    <span className="text-xs text-zinc-400">
+                      Schedule publish dates for all saved campaign pairs
+                    </span>
+                  </div>
+
+                  <button
+                    onClick={async () => {
+                      setAutoScheduling(true);
+                      setAutoScheduleResult(null);
+                      console.log(`[⚡ Auto-Schedule] Starting bulk auto-schedule for event ${eventId}`);
+                      try {
+                        const res = await fetch(`/api/events/${eventId}/auto-schedule`, {
+                          method: "POST",
+                        });
+                        const json = await res.json().catch(() => null);
+                        if (res.ok) {
+                          console.log(`[⚡ Auto-Schedule] ✅ Done:`, json);
+                          setAutoScheduleResult(`✅ ${json.scheduled} posts scheduled${json.failed ? `, ${json.failed} failed` : ""}`);
+                        } else {
+                          console.error(`[⚡ Auto-Schedule] ❌ Failed:`, json?.error);
+                          setAutoScheduleResult(`❌ ${json?.error ?? "Failed"}`);
+                        }
+                      } catch (err) {
+                        console.error(`[⚡ Auto-Schedule] ❌ Network error:`, err);
+                        setAutoScheduleResult("❌ Network error");
+                      }
+                      setAutoScheduling(false);
+                      mutate();
+                    }}
+                    disabled={autoScheduling}
+                    className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-gradient-to-r from-amber-500 to-orange-500 px-4 text-xs font-bold text-white shadow-sm transition-all hover:scale-[1.01] hover:shadow-amber-500/20 disabled:opacity-50"
+                  >
+                    {autoScheduling ? "⏳ Scheduling All…" : "⚡ Auto-Schedule All Posts"}
+                  </button>
                 </div>
+
+                {autoScheduleResult && (
+                  <div className={`rounded-xl border p-3 text-xs font-semibold ${
+                    autoScheduleResult.startsWith("✅")
+                      ? "border-green-500/20 bg-green-500/5 text-green-600 dark:text-green-400"
+                      : "border-red-500/20 bg-red-500/5 text-red-600 dark:text-red-400"
+                  }`}>
+                    {autoScheduleResult}
+                  </div>
+                )}
 
                 <div className="space-y-6">
                   {savedPairs.map((pair) => (
@@ -1303,7 +1347,18 @@ export default function Workspace({ eventId }: { eventId: string }) {
 
 function ChosenPost({ post, onSaved }: { post: Post; onSaved: () => void }) {
   const [draft, setDraft] = useState(post.final_caption ?? "");
-  const [dueAt, setDueAt] = useState("");
+  // Pre-fill dueAt from auto-calculated scheduled_at
+  const [dueAt, setDueAt] = useState(() => {
+    if (!post.scheduled_at) return "";
+    const d = new Date(post.scheduled_at);
+    if (isNaN(d.getTime())) return "";
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, "0");
+    const dd = String(d.getDate()).padStart(2, "0");
+    const hh = String(d.getHours()).padStart(2, "0");
+    const min = String(d.getMinutes()).padStart(2, "0");
+    return `${yyyy}-${mm}-${dd}T${hh}:${min}`;
+  });
   const [busy, setBusy] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const dirty = draft !== post.final_caption;
@@ -1403,6 +1458,11 @@ function ChosenPost({ post, onSaved }: { post: Post; onSaved: () => void }) {
                 onChange={(e) => setDueAt(e.target.value)}
                 className="rounded-lg border border-zinc-200 bg-transparent px-3 py-1.5 text-xs focus:border-indigo-500 focus:outline-none dark:border-zinc-800"
               />
+              {post.scheduled_at && (
+                <span className="text-[9px] text-amber-600 dark:text-amber-400 font-medium">
+                  💡 Auto-suggested: {new Date(post.scheduled_at).toLocaleString()}
+                </span>
+              )}
             </div>
             
             <button
@@ -1413,9 +1473,14 @@ function ChosenPost({ post, onSaved }: { post: Post; onSaved: () => void }) {
               {busy === "schedule" ? "Scheduling…" : "Schedule with Buffer"}
             </button>
             
-            {post.scheduled_at && (
+            {post.scheduled_at && post.status === "scheduled" && (
               <span className="mt-4 inline-flex items-center gap-1.5 rounded-full bg-green-500/10 px-3 py-1 text-xs font-bold text-green-600 dark:text-green-400">
                 <span>✓</span> Scheduled: {new Date(post.scheduled_at).toLocaleString()}
+              </span>
+            )}
+            {post.scheduled_at && post.status !== "scheduled" && (
+              <span className="mt-4 inline-flex items-center gap-1.5 rounded-full bg-amber-500/10 px-3 py-1 text-xs font-bold text-amber-600 dark:text-amber-400">
+                <span>⏰</span> Suggested: {new Date(post.scheduled_at).toLocaleString()}
               </span>
             )}
             

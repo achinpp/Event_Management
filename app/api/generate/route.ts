@@ -3,6 +3,7 @@ import { z } from "zod";
 import { google } from "@ai-sdk/google";
 import { generateObject } from "ai";
 import { supabaseAdmin } from "@/lib/supabase";
+import { resolvePublishDate } from "@/lib/schedule-utils";
 import { demoCampaignPlan } from "@/lib/demo";
 import { getSessionUser } from "@/lib/auth";
 
@@ -168,16 +169,23 @@ IMPORTANT RULES:
   await db.from("generated_posts").delete().eq("event_id", eventId);
 
   // Create post rows for each entry in the AI-generated sequence
+  // Auto-calculate scheduled_at from publishWindow + event.starts_at
+  console.log(`[Generate] Auto-scheduling ${campaignPlan.postSequence.length} posts based on publishWindow and event date: ${event.starts_at ?? "no date (using today)"}`);
   const { error: insertError } = await db.from("generated_posts").insert(
-    campaignPlan.postSequence.map((post, i) => ({
-      event_id: eventId,
-      variant_index: i,
-      image_url: null,
-      caption: post.caption,
-      hashtags: post.hashtags,
-      final_caption: null,
-      status: "draft",
-    }))
+    campaignPlan.postSequence.map((post, i) => {
+      const scheduledAt = resolvePublishDate(event.starts_at, post.publishWindow, post.platform);
+      console.log(`[Generate]   Post #${i + 1} "${post.label}": publishWindow="${post.publishWindow}" → scheduled_at=${scheduledAt}`);
+      return {
+        event_id: eventId,
+        variant_index: i,
+        image_url: null,
+        caption: post.caption,
+        hashtags: post.hashtags,
+        final_caption: null,
+        scheduled_at: scheduledAt,
+        status: "draft",
+      };
+    })
   );
   if (insertError) {
     return NextResponse.json({ error: insertError.message }, { status: 500 });
