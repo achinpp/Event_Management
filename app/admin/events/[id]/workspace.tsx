@@ -57,6 +57,12 @@ interface ContentWeek {
   activities: string[];
 }
 
+function formatImageUrl(url: string | null | undefined, cacheKey: number): string | null {
+  if (!url) return null;
+  if (url.startsWith("data:")) return url;
+  return `${url}${url.includes("?") ? "&" : "?"}v=${cacheKey}`;
+}
+
 interface CampaignPlan {
   campaignSummary: string;
   targetAudience?: string;
@@ -296,7 +302,7 @@ export default function Workspace({ eventId }: { eventId: string }) {
         failCount++;
       }
       // Refresh data + force image cache-bust so the new image renders immediately
-      setRefreshKey(Date.now());
+      setRefreshKey((prev) => prev + 1);
       await mutate();
       // Small delay to let the UI render the new image before starting the next one
       await new Promise(r => setTimeout(r, 500));
@@ -511,7 +517,7 @@ export default function Workspace({ eventId }: { eventId: string }) {
     }
 
     setBusyCaptionIndex(null);
-    setRefreshKey(Date.now());
+    setRefreshKey((prev) => prev + 1);
     await mutate();
   }
 
@@ -1190,9 +1196,7 @@ export default function Workspace({ eventId }: { eventId: string }) {
                 <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
                   {campaignPlan.postSequence.map((post, index) => {
                     const dbPost = posts.find((p) => p.variant_index === index) || posts[index];
-                    const imageUrl = dbPost?.image_url
-                      ? `${dbPost.image_url}?v=${refreshKey}`
-                      : null;
+                    const imageUrl = formatImageUrl(dbPost?.image_url, refreshKey);
                     const isBusyImage = busyImageIndex === index;
                     const isBusyCaption = busyCaptionIndex === index;
                     const isQueueActiveThis = isQueueRunning && queueIndex === index;
@@ -1445,7 +1449,7 @@ export default function Workspace({ eventId }: { eventId: string }) {
                 
                 <div className="grid gap-3 grid-cols-2">
                   {posts.map((post) => {
-                    const imgUrl = post.image_url ? `${post.image_url}?v=${refreshKey}` : null;
+                    const imgUrl = formatImageUrl(post.image_url, refreshKey);
                     return (
                       <button
                         key={post.id}
