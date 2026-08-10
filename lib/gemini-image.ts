@@ -8,7 +8,10 @@ export interface InlineImage {
   data: string; // base64
 }
 
-function createFallbackGraphic(prompt: string): { bytes: Buffer; mimeType: string } {
+function createFallbackGraphic(
+  prompt: string,
+  logo?: InlineImage
+): { bytes: Buffer; mimeType: string } {
   // Extract event title or keywords from prompt
   const titleMatch = prompt.match(/Event Title:\s*([^,\n]+)/i);
   const eventTitle = titleMatch ? titleMatch[1].trim() : "SPECIAL EVENT";
@@ -26,6 +29,20 @@ function createFallbackGraphic(prompt: string): { bytes: Buffer; mimeType: strin
   ];
   const t = themes[Math.floor(Math.random() * themes.length)];
   const uid = `grad_${Math.floor(Math.random() * 100000)}`;
+
+  let logoSvg = "";
+  if (logo && logo.data) {
+    logoSvg = `
+    <!-- Event Logo Badge -->
+    <g transform="translate(360, 95)">
+      <rect x="0" y="0" width="80" height="80" rx="20" fill="#ffffff" opacity="0.95" />
+      <rect x="0" y="0" width="80" height="80" rx="20" fill="none" stroke="${t.accent}" stroke-width="2" opacity="0.6" />
+      <clipPath id="logo_clip_${uid}">
+        <rect x="6" y="6" width="68" height="68" rx="14" />
+      </clipPath>
+      <image href="data:${logo.mimeType};base64,${logo.data}" x="6" y="6" width="68" height="68" preserveAspectRatio="xMidYMid slice" clip-path="url(#logo_clip_${uid})" />
+    </g>`;
+  }
 
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 800" width="800" height="800">
   <defs>
@@ -46,11 +63,13 @@ function createFallbackGraphic(prompt: string): { bytes: Buffer; mimeType: strin
   
   <rect x="50" y="50" width="700" height="700" rx="30" fill="none" stroke="#ffffff" stroke-width="2" opacity="0.25" />
   
+  ${logoSvg}
+
   <!-- Content Card -->
-  <rect x="70" y="170" width="660" height="460" rx="24" fill="#000000" opacity="0.3" />
-  <rect x="70" y="170" width="660" height="460" rx="24" fill="none" stroke="${t.accent}" stroke-width="1" opacity="0.4" />
+  <rect x="70" y="195" width="660" height="435" rx="24" fill="#000000" opacity="0.3" />
+  <rect x="70" y="195" width="660" height="435" rx="24" fill="none" stroke="${t.accent}" stroke-width="1" opacity="0.4" />
   
-  <text x="400" y="260" text-anchor="middle" fill="${t.accent}" font-family="system-ui, sans-serif" font-size="18" font-weight="800" letter-spacing="4">
+  <text x="400" y="265" text-anchor="middle" fill="${t.accent}" font-family="system-ui, sans-serif" font-size="16" font-weight="800" letter-spacing="4">
     EVENT PILOT GRAPHIC · ${t.style.toUpperCase()} EDITION
   </text>
   
@@ -78,8 +97,8 @@ export async function generateImage(
   prompt: string,
   _logo?: InlineImage
 ): Promise<{ bytes: Buffer; mimeType: string }> {
-  // Generate high-quality SVG graphic banner immediately without socket blocks
-  return createFallbackGraphic(prompt);
+  // Generate high-quality SVG graphic banner with embedded logo emblem
+  return createFallbackGraphic(prompt, _logo);
 }
 
 // Fetch the event logo so it can ride along as inlineData in the prompt.

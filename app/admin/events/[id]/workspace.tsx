@@ -178,6 +178,30 @@ export default function Workspace({ eventId }: { eventId: string }) {
   const [isEditing, setIsEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [logoUrl, setLogoUrl] = useState<string | null>(null);
+  const [logoError, setLogoError] = useState<string | null>(null);
+  const [autoScheduling, setAutoScheduling] = useState(false);
+  const [autoScheduleResult, setAutoScheduleResult] = useState<string | null>(null);
+  const [genStepIndex, setGenStepIndex] = useState(0);
+
+  function handleLogoFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const ALLOWED_TYPES = ["image/png", "image/jpeg", "image/jpg", "image/webp", "image/svg+xml"];
+    if (!ALLOWED_TYPES.includes(file.type.toLowerCase())) {
+      setLogoError("Invalid image format! Only PNG, JPEG, WEBP, and SVG files are allowed.");
+      e.target.value = "";
+      return;
+    }
+
+    setLogoError(null);
+    const reader = new FileReader();
+    reader.onload = () => {
+      setLogoUrl(reader.result as string);
+    };
+    reader.readAsDataURL(file);
+  }
 
   if (!data) {
     return <main className="p-10 text-sm opacity-70">Loading…</main>;
@@ -189,8 +213,6 @@ export default function Workspace({ eventId }: { eventId: string }) {
   const { event, posts } = data;
   const campaignPlan = event.breakdown;
   const savedPairs = posts.filter((p) => p.final_caption !== null);
-  const [autoScheduling, setAutoScheduling] = useState(false);
-  const [autoScheduleResult, setAutoScheduleResult] = useState<string | null>(null);
 
   async function runImageQueue(targetPosts?: Post[], planOverride?: CampaignPlan) {
     const listToProcess = targetPosts ?? posts;
@@ -267,37 +289,58 @@ export default function Workspace({ eventId }: { eventId: string }) {
     setIsQueueRunning(false);
   }
 
-  // Also update postSequence reference inside the queue for single-item calls
   const activePlan = campaignPlan;
+
+  const GEN_STEPS = [
+    { label: "Analyzing Event Details & Knowledge Base", icon: "🔍" },
+    { label: "Synthesizing AI Social Strategy & Audience Messaging", icon: "🤖" },
+    { label: "Drafting Multi-Phase Post Schedule & Captions", icon: "📝" },
+    { label: "Preparing AI Poster Graphic Generation Pipeline", icon: "🎨" },
+  ];
 
   async function generate() {
     setGenerating(true);
     setError(null);
+    setGenStepIndex(0);
     console.log(`[🚀 Generate] Starting campaign generation for event ${eventId}`);
-    const res = await fetch("/api/generate", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ eventId }),
-    });
-    setGenerating(false);
-    if (!res.ok) {
-      const json = await res.json().catch(() => null);
-      console.error(`[🚀 Generate] ❌ Campaign generation failed (${res.status}):`, json?.error);
-      setError(json?.error ?? `generate failed (${res.status})`);
-      return;
-    }
-    const json = await res.json();
-    console.log(`[🚀 Generate] ✅ Campaign generated, ${json?.posts?.length ?? 0} posts created`);
     
-    // Fetch fresh SWR data so we get the updated campaignPlan with postSequence
-    const freshData = await mutate();
-    console.log(`[🚀 Generate] SWR refreshed, postSequence available: ${!!freshData?.event?.breakdown?.postSequence}`);
-    
-    // Auto-trigger image generation queue for all posts, passing the fresh plan
-    if (json?.posts && Array.isArray(json.posts)) {
-      const freshPlan = freshData?.event?.breakdown as CampaignPlan | undefined;
-      console.log(`[🚀 Generate] Starting image queue with freshPlan (${freshPlan?.postSequence?.length ?? 0} items)`);
-      runImageQueue(json.posts, freshPlan);
+    // Cycle step indicator while generating
+    const stepInterval = setInterval(() => {
+      setGenStepIndex((prev) => (prev + 1) % GEN_STEPS.length);
+    }, 2800);
+
+    try {
+      const res = await fetch("/api/generate", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ eventId }),
+      });
+      clearInterval(stepInterval);
+      setGenerating(false);
+
+      if (!res.ok) {
+        const json = await res.json().catch(() => null);
+        console.error(`[🚀 Generate] ❌ Campaign generation failed (${res.status}):`, json?.error);
+        setError(json?.error ?? `generate failed (${res.status})`);
+        return;
+      }
+      const json = await res.json();
+      console.log(`[🚀 Generate] ✅ Campaign generated, ${json?.posts?.length ?? 0} posts created`);
+      
+      // Fetch fresh SWR data so we get the updated campaignPlan with postSequence
+      const freshData = await mutate();
+      console.log(`[🚀 Generate] SWR refreshed, postSequence available: ${!!freshData?.event?.breakdown?.postSequence}`);
+      
+      // Auto-trigger image generation queue for all posts, passing the fresh plan
+      if (json?.posts && Array.isArray(json.posts)) {
+        const freshPlan = freshData?.event?.breakdown as CampaignPlan | undefined;
+        console.log(`[🚀 Generate] Starting image queue with freshPlan (${freshPlan?.postSequence?.length ?? 0} items)`);
+        runImageQueue(json.posts, freshPlan);
+      }
+    } catch (err) {
+      clearInterval(stepInterval);
+      setGenerating(false);
+      setError(err instanceof Error ? err.message : "Campaign generation encountered a network error");
     }
   }
 
@@ -450,6 +493,7 @@ export default function Workspace({ eventId }: { eventId: string }) {
       contact_name: (formData.get("contact_name") as string) || null,
       contact_email: (formData.get("contact_email") as string) || null,
       contact_phone: (formData.get("contact_phone") as string) || null,
+      logo_url: logoUrl !== null ? logoUrl : event.logo_url,
       invite_lead_days: Number(formData.get("invite_lead_days") ?? 7),
     };
     const res = await fetch(`/api/events/${eventId}`, {
@@ -511,11 +555,161 @@ export default function Workspace({ eventId }: { eventId: string }) {
           <span>←</span> Back to Dashboard
         </Link>
 
+        {/* Edit Event Details Modal */}
+        {isEditing && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+            <div className="w-full max-w-xl rounded-2xl border border-zinc-200 bg-white p-6 shadow-2xl dark:border-zinc-800 dark:bg-zinc-900 max-h-[90vh] overflow-y-auto">
+              <div className="flex items-center justify-between border-b border-zinc-200/60 dark:border-zinc-800 pb-3 mb-4">
+                <h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-50">Edit Event Details</h3>
+                <button
+                  onClick={() => setIsEditing(false)}
+                  className="rounded-lg p-1 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200"
+                >
+                  ✕
+                </button>
+              </div>
+
+              <form onSubmit={handleSave} className="grid gap-4">
+                <div className="grid gap-1.5">
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">Event Title</label>
+                  <input
+                    name="title"
+                    defaultValue={event.title}
+                    required
+                    className="rounded-xl border border-zinc-200/80 bg-white/50 px-3.5 py-2 text-sm transition-all focus:border-indigo-500 focus:outline-none dark:border-zinc-800 dark:bg-zinc-950/50"
+                  />
+                </div>
+
+                {/* Logo Image Upload with Validation */}
+                <div className="grid gap-1.5">
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">
+                    Event Logo (PNG, JPEG, WEBP, SVG)
+                  </label>
+                  <div className="flex items-center gap-3">
+                    {logoUrl || event.logo_url ? (
+                      <div className="relative group">
+                        <img
+                          src={logoUrl ?? event.logo_url ?? ""}
+                          alt="Logo Preview"
+                          className="h-12 w-12 rounded-xl object-cover border border-indigo-500/40 shadow-sm"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setLogoUrl("")}
+                          className="absolute -top-1.5 -right-1.5 rounded-full bg-red-500 text-white p-0.5 text-[10px] shadow hover:bg-red-600 transition-colors"
+                          title="Remove logo"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="h-12 w-12 rounded-xl border border-dashed border-zinc-300 dark:border-zinc-700 flex items-center justify-center text-zinc-400 text-xs">
+                        📷
+                      </div>
+                    )}
+                    <div className="flex-1">
+                      <input
+                        type="file"
+                        accept="image/png,image/jpeg,image/jpg,image/webp,image/svg+xml"
+                        onChange={handleLogoFileChange}
+                        className="block w-full text-xs text-zinc-500 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100 dark:file:bg-indigo-950/60 dark:file:text-indigo-300 cursor-pointer"
+                      />
+                    </div>
+                  </div>
+                  {logoError && <p className="text-[11px] font-semibold text-red-500 mt-1">{logoError}</p>}
+                </div>
+
+                <div className="grid gap-1.5">
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">Description</label>
+                  <textarea
+                    name="description"
+                    defaultValue={event.description ?? ""}
+                    rows={4}
+                    className="rounded-xl border border-zinc-200/80 bg-white/50 px-3.5 py-2 text-sm transition-all focus:border-indigo-500 focus:outline-none dark:border-zinc-800 dark:bg-zinc-950/50"
+                  />
+                </div>
+
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="grid gap-1.5">
+                    <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">Starts At</label>
+                    <input
+                      name="starts_at"
+                      type="datetime-local"
+                      defaultValue={event.starts_at ? new Date(event.starts_at).toISOString().slice(0, 16) : ""}
+                      className="rounded-xl border border-zinc-200/80 bg-white/50 px-3.5 py-2 text-sm transition-all focus:border-indigo-500 focus:outline-none dark:border-zinc-800 dark:bg-zinc-950/50"
+                    />
+                  </div>
+                  <div className="grid gap-1.5">
+                    <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">Venue</label>
+                    <input
+                      name="venue"
+                      defaultValue={event.venue ?? ""}
+                      className="rounded-xl border border-zinc-200/80 bg-white/50 px-3.5 py-2 text-sm transition-all focus:border-indigo-500 focus:outline-none dark:border-zinc-800 dark:bg-zinc-950/50"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid gap-4 sm:grid-cols-3">
+                  <div className="grid gap-1.5">
+                    <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">Contact Name</label>
+                    <input
+                      name="contact_name"
+                      defaultValue={event.contact_name ?? ""}
+                      className="rounded-xl border border-zinc-200/80 bg-white/50 px-3.5 py-2 text-sm transition-all focus:border-indigo-500 focus:outline-none dark:border-zinc-800 dark:bg-zinc-950/50"
+                    />
+                  </div>
+                  <div className="grid gap-1.5">
+                    <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">Contact Email</label>
+                    <input
+                      name="contact_email"
+                      type="email"
+                      defaultValue={event.contact_email ?? ""}
+                      className="rounded-xl border border-zinc-200/80 bg-white/50 px-3.5 py-2 text-sm transition-all focus:border-indigo-500 focus:outline-none dark:border-zinc-800 dark:bg-zinc-950/50"
+                    />
+                  </div>
+                  <div className="grid gap-1.5">
+                    <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">Contact Phone</label>
+                    <input
+                      name="contact_phone"
+                      defaultValue={event.contact_phone ?? ""}
+                      className="rounded-xl border border-zinc-200/80 bg-white/50 px-3.5 py-2 text-sm transition-all focus:border-indigo-500 focus:outline-none dark:border-zinc-800 dark:bg-zinc-950/50"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex justify-end gap-2 pt-3 border-t border-zinc-200/60 dark:border-zinc-800">
+                  <button
+                    type="button"
+                    onClick={() => setIsEditing(false)}
+                    className="rounded-xl border border-zinc-200 px-4 py-2 text-xs font-bold text-zinc-600 hover:bg-zinc-50 dark:border-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-800"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={saving}
+                    className="rounded-xl bg-indigo-600 px-5 py-2 text-xs font-bold text-white shadow hover:bg-indigo-500 disabled:opacity-50"
+                  >
+                    {saving ? "Saving Changes…" : "Save Changes"}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
         {/* Event Detail Banner Card */}
         <div className="mt-4 rounded-2xl border border-zinc-200/80 bg-white/70 p-6 shadow-md backdrop-blur-md dark:border-zinc-800/80 dark:bg-zinc-900/40">
           <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
             <div className="min-w-0 flex-1">
-              <div className="flex flex-wrap items-center gap-2.5">
+              <div className="flex flex-wrap items-center gap-3">
+                {event.logo_url && (
+                  <img
+                    src={event.logo_url}
+                    alt={`${event.title} Logo`}
+                    className="h-12 w-12 shrink-0 rounded-xl object-cover border border-zinc-200 dark:border-zinc-800 bg-white shadow-sm"
+                  />
+                )}
                 <h1 className="text-2xl font-extrabold tracking-tight text-zinc-900 dark:text-zinc-50">
                   {event.title}
                 </h1>
@@ -588,10 +782,13 @@ export default function Workspace({ eventId }: { eventId: string }) {
               <button
                 onClick={generate}
                 disabled={generating}
-                className="inline-flex h-10 items-center gap-1.5 rounded-xl bg-gradient-to-r from-violet-600 to-indigo-650 px-5 text-xs font-bold text-white shadow-sm transition-all hover:scale-[1.01] hover:shadow-indigo-500/15 disabled:opacity-50"
+                className="inline-flex h-10 items-center gap-2 rounded-xl bg-gradient-to-r from-violet-600 to-indigo-650 px-5 text-xs font-bold text-white shadow-sm transition-all hover:scale-[1.01] hover:shadow-indigo-500/15 disabled:opacity-50 cursor-pointer"
               >
                 {generating ? (
-                  "⏳ Generating campaign…"
+                  <>
+                    <span className="h-2 w-2 rounded-full bg-white animate-ping" />
+                    <span>⏳ Campaign generating...</span>
+                  </>
                 ) : posts.length > 0 ? (
                   <>
                     <span>🔄</span> Regenerate Campaign
@@ -607,6 +804,51 @@ export default function Workspace({ eventId }: { eventId: string }) {
         </div>
 
         {error && <p className="mt-4 rounded-xl border border-red-200 bg-red-550/5 p-4 text-xs font-semibold text-red-500 dark:border-red-500/10">{error}</p>}
+
+        {/* Interactive Campaign Generation Visual Feedback Banner */}
+        {generating && (
+          <div className="mt-6 overflow-hidden rounded-2xl border border-indigo-500/30 bg-gradient-to-r from-violet-950/40 via-indigo-950/30 to-purple-950/40 p-6 shadow-2xl backdrop-blur-xl animate-fadeIn">
+            <div className="flex flex-col md:flex-row items-center justify-between gap-6">
+              <div className="flex items-center gap-4">
+                {/* Animated Radar Pulse Spinner */}
+                <div className="relative flex h-14 w-14 items-center justify-center shrink-0">
+                  <div className="absolute h-full w-full rounded-full bg-indigo-500/30 animate-ping" />
+                  <div className="relative flex h-12 w-12 items-center justify-center rounded-full bg-gradient-to-tr from-violet-600 to-indigo-600 shadow-lg text-xl">
+                    ⚡
+                  </div>
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-extrabold uppercase tracking-widest text-indigo-400">
+                      AI Orchestrator Processing
+                    </span>
+                    <span className="h-2 w-2 rounded-full bg-indigo-400 animate-pulse" />
+                  </div>
+                  <h3 className="text-lg font-bold text-white mt-0.5">
+                    Your campaign is still generating...
+                  </h3>
+                  <p className="text-xs text-zinc-400 mt-1">
+                    Please hold on! Gemini AI is synthesizing multi-day strategy, captions, and graphic prompts.
+                  </p>
+                </div>
+              </div>
+              
+              {/* Animated Progress Steps */}
+              <div className="w-full md:w-auto min-w-[300px] rounded-xl border border-indigo-500/20 bg-indigo-900/30 p-4 backdrop-blur-md">
+                <div className="flex items-center gap-2.5 text-xs font-bold text-indigo-200">
+                  <span className="text-base">{GEN_STEPS[genStepIndex].icon}</span>
+                  <span className="truncate">{GEN_STEPS[genStepIndex].label}</span>
+                </div>
+                <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-zinc-800">
+                  <div
+                    className="h-full bg-gradient-to-r from-violet-500 via-indigo-400 to-cyan-400 transition-all duration-500"
+                    style={{ width: `${((genStepIndex + 1) / GEN_STEPS.length) * 100}%` }}
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Empty Campaign State */}
         {posts.length === 0 && !generating && (

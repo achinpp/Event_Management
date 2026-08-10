@@ -16,6 +16,7 @@ interface EventRow {
   contact_name: string | null;
   contact_email: string | null;
   contact_phone: string | null;
+  logo_url: string | null;
 }
 
 const fetcher = async (url: string) => {
@@ -30,6 +31,8 @@ const fetcher = async (url: string) => {
   return data;
 };
 
+const ALLOWED_IMAGE_TYPES = ["image/png", "image/jpeg", "image/jpg", "image/webp", "image/svg+xml"];
+
 export default function AdminPage() {
   const { data, isLoading, mutate } = useSWR<{ events: EventRow[] }>(
     "/api/events",
@@ -42,6 +45,26 @@ export default function AdminPage() {
   const router = useRouter();
   const [creating, setCreating] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  const [logoUrl, setLogoUrl] = useState<string | null>(null);
+  const [logoError, setLogoError] = useState<string | null>(null);
+
+  function handleLogoFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!ALLOWED_IMAGE_TYPES.includes(file.type.toLowerCase())) {
+      setLogoError("Invalid image format! Only PNG, JPEG, WEBP, and SVG files are allowed.");
+      e.target.value = "";
+      return;
+    }
+
+    setLogoError(null);
+    const reader = new FileReader();
+    reader.onload = () => {
+      setLogoUrl(reader.result as string);
+    };
+    reader.readAsDataURL(file);
+  }
 
   async function handleSignOut() {
     await fetch("/api/auth/signout", { method: "POST" });
@@ -60,6 +83,7 @@ export default function AdminPage() {
       contact_name: (formData.get("contact_name") as string) || undefined,
       contact_email: (formData.get("contact_email") as string) || undefined,
       contact_phone: (formData.get("contact_phone") as string) || undefined,
+      logo_url: logoUrl || undefined,
     };
     const res = await fetch("/api/events", {
       method: "POST",
@@ -160,12 +184,51 @@ export default function AdminPage() {
                   />
                 </div>
 
+                {/* Event Logo Upload Field */}
+                <div className="grid gap-1.5">
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
+                    Event Logo (PNG, JPEG, WEBP, SVG)
+                  </label>
+                  <div className="flex items-center gap-3">
+                    {logoUrl ? (
+                      <div className="relative group">
+                        <img
+                          src={logoUrl}
+                          alt="Logo Preview"
+                          className="h-12 w-12 rounded-xl object-cover border border-indigo-500/40 shadow-sm"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setLogoUrl(null)}
+                          className="absolute -top-1.5 -right-1.5 rounded-full bg-red-500 text-white p-0.5 text-[10px] shadow hover:bg-red-600 transition-colors"
+                          title="Remove logo"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="h-12 w-12 rounded-xl border border-dashed border-zinc-300 dark:border-zinc-700 flex items-center justify-center text-zinc-400 text-xs">
+                        📷
+                      </div>
+                    )}
+                    <div className="flex-1">
+                      <input
+                        type="file"
+                        accept="image/png,image/jpeg,image/jpg,image/webp,image/svg+xml"
+                        onChange={handleLogoFileChange}
+                        className="block w-full text-xs text-zinc-500 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100 dark:file:bg-indigo-950/60 dark:file:text-indigo-300 cursor-pointer"
+                      />
+                    </div>
+                  </div>
+                  {logoError && <p className="text-[11px] font-semibold text-red-500 mt-1">{logoError}</p>}
+                </div>
+
                 <div className="grid gap-1.5">
                   <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">Description (AI Knowledge Base)</label>
                   <textarea
                     name="description"
                     required
-                    rows={5}
+                    rows={4}
                     placeholder="Detail speakers, timings, lunch logistics, tickets, parking rules..."
                     className="rounded-xl border border-zinc-200/80 bg-white/50 px-3.5 py-2 text-sm transition-all focus:border-indigo-500 focus:outline-none dark:border-zinc-800 dark:bg-zinc-950/50"
                   />
@@ -252,43 +315,52 @@ export default function AdminPage() {
                     href={`/admin/events/${event.id}`}
                     className="group flex items-center justify-between rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm transition-all hover:border-violet-500/50 hover:shadow-md hover:-translate-y-0.5 dark:border-zinc-850 dark:bg-zinc-900/30 dark:hover:border-violet-500/30"
                   >
-                    <div className="flex-1 min-w-0 pr-4">
-                      <div className="flex items-center gap-2">
-                        <span className="font-bold text-zinc-850 dark:text-zinc-100 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 truncate">
-                          {event.title}
-                        </span>
-                        
-                        {/* Event status badge */}
-                        <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase ${
-                          event.status === "active" || event.status === "published"
-                            ? "bg-green-500/10 text-green-600 dark:text-green-400"
-                            : "bg-zinc-500/10 text-zinc-500 dark:text-zinc-400"
-                        }`}>
-                          {event.status}
-                        </span>
-                      </div>
-                      
-                      {/* Venue & Time indicators */}
-                      <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-zinc-500 dark:text-zinc-400">
-                        {event.venue && (
-                          <span className="flex items-center gap-1">
-                            {/* MapPin Icon */}
-                            <svg className="h-3.5 w-3.5 text-zinc-400" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" d="M15 10.5a3 3 0 11-6 0 3 3 0 016 0z" />
-                              <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z" />
-                            </svg>
-                            {event.venue}
+                    <div className="flex-1 min-w-0 pr-4 flex items-center gap-3.5">
+                      {event.logo_url && (
+                        <img
+                          src={event.logo_url}
+                          alt={`${event.title} Logo`}
+                          className="h-10 w-10 shrink-0 rounded-xl object-cover border border-zinc-200 dark:border-zinc-800 bg-white shadow-xs"
+                        />
+                      )}
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-zinc-850 dark:text-zinc-100 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 truncate">
+                            {event.title}
                           </span>
-                        )}
-                        <span className="flex items-center gap-1">
-                          {/* Calendar Icon */}
-                          <svg className="h-3.5 w-3.5 text-zinc-400" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5" />
-                          </svg>
-                          {event.starts_at
-                            ? new Date(event.starts_at).toLocaleDateString()
-                            : "No scheduled date"}
-                        </span>
+                          
+                          {/* Event status badge */}
+                          <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase ${
+                            event.status === "active" || event.status === "published"
+                              ? "bg-green-500/10 text-green-600 dark:text-green-400"
+                              : "bg-zinc-500/10 text-zinc-500 dark:text-zinc-400"
+                          }`}>
+                            {event.status}
+                          </span>
+                        </div>
+                        
+                        {/* Venue & Time indicators */}
+                        <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1 text-xs text-zinc-500 dark:text-zinc-400">
+                          {event.venue && (
+                            <span className="flex items-center gap-1">
+                              {/* MapPin Icon */}
+                              <svg className="h-3.5 w-3.5 text-zinc-400" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M15 10.5a3 3 0 11-6 0 3 3 0 016 0z" />
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z" />
+                              </svg>
+                              {event.venue}
+                            </span>
+                          )}
+                          <span className="flex items-center gap-1">
+                            {/* Calendar Icon */}
+                            <svg className="h-3.5 w-3.5 text-zinc-400" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5" />
+                            </svg>
+                            {event.starts_at
+                              ? new Date(event.starts_at).toLocaleDateString()
+                              : "No scheduled date"}
+                          </span>
+                        </div>
                       </div>
                     </div>
 
