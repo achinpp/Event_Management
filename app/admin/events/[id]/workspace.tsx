@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 /* eslint-disable @next/next/no-img-element -- generated/remote images, no next/image optimization needed */
 import useSWR from "swr";
+import { InteractiveEventDatePicker } from "@/components/interactive-event-date-picker";
 
 interface Post {
   id: string;
@@ -157,6 +158,19 @@ function CollapsibleSection({
   );
 }
 
+// ── Popular Social Media Platforms Definition ─────────────────────────────
+
+const POPULAR_PLATFORMS = [
+  { id: "LinkedIn", name: "LinkedIn", icon: "💼", badge: "Professional", description: "B2B, corporate outreach & professional network" },
+  { id: "Twitter", name: "X (Twitter)", icon: "🪶", badge: "News & Hype", description: "Real-time updates, threads & event announcements" },
+  { id: "Instagram", name: "Instagram", icon: "📸", badge: "Visual & Reels", description: "High-impact visual posts, Stories & Reels" },
+  { id: "Facebook", name: "Facebook", icon: "📘", badge: "Community", description: "Event pages, groups & community engagement" },
+  { id: "TikTok", name: "TikTok", icon: "🎵", badge: "Viral Video", description: "Short-form video highlights & trend challenges" },
+  { id: "WhatsApp", name: "WhatsApp", icon: "💬", badge: "Direct Chat", description: "Direct chat outreach, broadcasts & group updates" },
+  { id: "YouTube", name: "YouTube", icon: "▶️", badge: "Video", description: "Long-form trailers, teasers & live streams" },
+  { id: "Threads", name: "Threads", icon: "🧵", badge: "Conversational", description: "Text updates, discussions & audience Q&A" },
+];
+
 // ── Main Workspace ──────────────────────────────────────────────────────
 
 export default function Workspace({ eventId }: { eventId: string }) {
@@ -183,6 +197,14 @@ export default function Workspace({ eventId }: { eventId: string }) {
   const [autoScheduling, setAutoScheduling] = useState(false);
   const [autoScheduleResult, setAutoScheduleResult] = useState<string | null>(null);
   const [genStepIndex, setGenStepIndex] = useState(0);
+  const [showPlatformModal, setShowPlatformModal] = useState(false);
+  const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>([
+    "LinkedIn",
+    "Twitter",
+    "Instagram",
+    "Facebook",
+  ]);
+  const [platformError, setPlatformError] = useState<string | null>(null);
 
   function handleLogoFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -298,11 +320,46 @@ export default function Workspace({ eventId }: { eventId: string }) {
     { label: "Preparing AI Poster Graphic Generation Pipeline", icon: "🎨" },
   ];
 
-  async function generate() {
+  function togglePlatform(platformId: string) {
+    setPlatformError(null);
+    setSelectedPlatforms((prev) =>
+      prev.includes(platformId)
+        ? prev.filter((p) => p !== platformId)
+        : [...prev, platformId]
+    );
+  }
+
+  function handleSelectAllPlatforms() {
+    setPlatformError(null);
+    setSelectedPlatforms(POPULAR_PLATFORMS.map((p) => p.id));
+  }
+
+  function handleClearAllPlatforms() {
+    setPlatformError(null);
+    setSelectedPlatforms([]);
+  }
+
+  function handleLaunchCampaignWithValidation() {
+    if (selectedPlatforms.length === 0) {
+      setPlatformError("Please select at least 1 social media platform before generating your campaign.");
+      return;
+    }
+    setShowPlatformModal(false);
+    generate(selectedPlatforms);
+  }
+
+  async function generate(overridePlatforms?: string[]) {
+    const platformsToUse = overridePlatforms ?? selectedPlatforms;
+    if (!platformsToUse || platformsToUse.length === 0) {
+      setPlatformError("Please select at least one social media platform before generating your campaign.");
+      setShowPlatformModal(true);
+      return;
+    }
+
     setGenerating(true);
     setError(null);
     setGenStepIndex(0);
-    console.log(`[🚀 Generate] Starting campaign generation for event ${eventId}`);
+    console.log(`[🚀 Generate] Starting campaign generation for event ${eventId} targeting: ${platformsToUse.join(", ")}`);
     
     // Cycle step indicator while generating
     const stepInterval = setInterval(() => {
@@ -313,7 +370,7 @@ export default function Workspace({ eventId }: { eventId: string }) {
       const res = await fetch("/api/generate", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ eventId }),
+        body: JSON.stringify({ eventId, targetPlatforms: platformsToUse }),
       });
       clearInterval(stepInterval);
       setGenerating(false);
@@ -550,10 +607,20 @@ export default function Workspace({ eventId }: { eventId: string }) {
         <div className="absolute top-20 left-10 -z-10 h-[300px] w-[300px] rounded-full bg-violet-650/5 blur-[120px] dark:bg-violet-650/10" />
         <div className="absolute bottom-20 right-10 -z-10 h-[250px] w-[250px] rounded-full bg-cyan-500/5 blur-[100px] dark:bg-cyan-500/10" />
 
-        {/* Back Link */}
-        <Link href="/admin" className="inline-flex items-center gap-1.5 text-xs font-semibold text-zinc-400 transition-colors hover:text-zinc-800 dark:text-zinc-500 dark:hover:text-zinc-200">
-          <span>←</span> Back to Dashboard
-        </Link>
+        {/* Breadcrumb Back Navigation */}
+        <div className="flex items-center gap-2 text-xs font-semibold text-zinc-500 dark:text-zinc-400">
+          <Link
+            href="/admin"
+            className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 transition-all hover:bg-zinc-200/60 hover:text-zinc-900 dark:hover:bg-zinc-800/80 dark:hover:text-zinc-100"
+          >
+            <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M10.5 19.5L3 12m0 0l7.5-7.5M3 12h18" />
+            </svg>
+            <span>Events Dashboard</span>
+          </Link>
+          <span className="text-zinc-300 dark:text-zinc-700">/</span>
+          <span className="font-bold text-zinc-800 dark:text-zinc-200 truncate max-w-[240px]">{event.title}</span>
+        </div>
 
         {/* Edit Event Details Modal */}
         {isEditing && (
@@ -632,11 +699,9 @@ export default function Workspace({ eventId }: { eventId: string }) {
                 <div className="grid gap-4 sm:grid-cols-2">
                   <div className="grid gap-1.5">
                     <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">Starts At</label>
-                    <input
+                    <InteractiveEventDatePicker
                       name="starts_at"
-                      type="datetime-local"
-                      defaultValue={event.starts_at ? new Date(event.starts_at).toISOString().slice(0, 16) : ""}
-                      className="rounded-xl border border-zinc-200/80 bg-white/50 px-3.5 py-2 text-sm transition-all focus:border-indigo-500 focus:outline-none dark:border-zinc-800 dark:bg-zinc-950/50"
+                      defaultValue={event.starts_at ? new Date(event.starts_at).toISOString() : undefined}
                     />
                   </div>
                   <div className="grid gap-1.5">
@@ -698,104 +763,165 @@ export default function Workspace({ eventId }: { eventId: string }) {
           </div>
         )}
 
-        {/* Event Detail Banner Card */}
-        <div className="mt-4 rounded-2xl border border-zinc-200/80 bg-white/70 p-6 shadow-md backdrop-blur-md dark:border-zinc-800/80 dark:bg-zinc-900/40">
-          <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
-            <div className="min-w-0 flex-1">
-              <div className="flex flex-wrap items-center gap-3">
-                {event.logo_url && (
-                  <img
-                    src={event.logo_url}
-                    alt={`${event.title} Logo`}
-                    className="h-12 w-12 shrink-0 rounded-xl object-cover border border-zinc-200 dark:border-zinc-800 bg-white shadow-sm"
-                  />
+        {/* Modern Redesigned Event Detail Header Hero Card */}
+        <div className="relative mt-6 overflow-hidden rounded-3xl border border-zinc-200/80 bg-white/80 p-6 sm:p-7 shadow-xl backdrop-blur-xl transition-all duration-300 dark:border-zinc-800/80 dark:bg-zinc-900/60 dark:shadow-2xl">
+          {/* Top Decorative Gradient Line Accent */}
+          <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500" />
+          
+          {/* Subtle Ambient Radial Glows */}
+          <div className="pointer-events-none absolute -top-24 -left-24 h-64 w-64 rounded-full bg-indigo-500/10 blur-3xl dark:bg-indigo-500/15" />
+          <div className="pointer-events-none absolute -bottom-24 -right-24 h-64 w-64 rounded-full bg-purple-500/10 blur-3xl dark:bg-purple-500/15" />
+
+          <div className="relative flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
+            {/* Left Column: Event Logo + Details */}
+            <div className="flex flex-col sm:flex-row sm:items-center gap-5 min-w-0 flex-1">
+              {/* Event Logo Badge */}
+              <div className="relative shrink-0 group">
+                {event.logo_url ? (
+                  <div className="relative h-16 w-16 overflow-hidden rounded-2xl border-2 border-indigo-500/20 bg-white shadow-md transition-all duration-300 group-hover:scale-105 group-hover:border-indigo-500/40 dark:border-indigo-400/20 dark:bg-zinc-900">
+                    <img
+                      src={event.logo_url}
+                      alt={`${event.title} Logo`}
+                      className="h-full w-full object-cover"
+                    />
+                  </div>
+                ) : (
+                  <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-600 via-purple-600 to-indigo-800 text-white font-black text-xl shadow-lg ring-2 ring-indigo-500/20 transition-all duration-300 group-hover:scale-105">
+                    {event.title ? event.title.substring(0, 2).toUpperCase() : "EV"}
+                  </div>
                 )}
-                <h1 className="text-2xl font-extrabold tracking-tight text-zinc-900 dark:text-zinc-50">
-                  {event.title}
-                </h1>
-                
-                {/* Status badge */}
-                <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${
-                  event.status === "active" || event.status === "published"
-                    ? "bg-green-500/10 text-green-600 dark:text-green-400"
-                    : "bg-zinc-500/10 text-zinc-500 dark:text-zinc-400"
-                }`}>
-                  {event.status}
-                </span>
               </div>
-              
-              <div className="mt-3 flex flex-wrap gap-x-6 gap-y-1.5 text-xs text-zinc-500 dark:text-zinc-400">
-                {event.venue && (
-                  <span className="flex items-center gap-1.5">
-                    {/* Location Pin */}
-                    <svg className="h-4 w-4 text-zinc-400" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M15 10.5a3 3 0 11-6 0 3 3 0 016 0z" />
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z" />
-                    </svg>
-                    {event.venue}
+
+              {/* Event Information Block */}
+              <div className="min-w-0 flex-1 space-y-2.5">
+                <div className="flex flex-wrap items-center gap-3">
+                  <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-zinc-900 dark:text-white">
+                    {event.title}
+                  </h1>
+                  
+                  {/* Status Badge */}
+                  <span
+                    className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[11px] font-extrabold uppercase tracking-wider shadow-xs ${
+                      event.status === "active" || event.status === "published"
+                        ? "bg-emerald-500/10 text-emerald-600 ring-1 ring-emerald-500/30 dark:bg-emerald-500/15 dark:text-emerald-400"
+                        : event.status === "draft"
+                        ? "bg-amber-500/10 text-amber-600 ring-1 ring-amber-500/30 dark:bg-amber-500/15 dark:text-amber-400"
+                        : "bg-zinc-500/10 text-zinc-600 ring-1 ring-zinc-500/30 dark:bg-zinc-500/15 dark:text-zinc-400"
+                    }`}
+                  >
+                    <span
+                      className={`h-2 w-2 rounded-full ${
+                        event.status === "active" || event.status === "published"
+                          ? "bg-emerald-500 animate-pulse"
+                          : event.status === "draft"
+                          ? "bg-amber-500"
+                          : "bg-zinc-400"
+                      }`}
+                    />
+                    {event.status}
                   </span>
+                </div>
+
+                {event.description && (
+                  <p className="text-xs sm:text-sm text-zinc-500 dark:text-zinc-400 max-w-4xl leading-relaxed mt-1 mb-3">
+                    {event.description}
+                  </p>
                 )}
-                <span className="flex items-center gap-1.5">
-                  {/* Calendar Icon */}
-                  <svg className="h-4 w-4 text-zinc-400" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5" />
-                  </svg>
-                  {event.starts_at ? new Date(event.starts_at).toLocaleString() : "No Date Scheduled"}
-                </span>
-                
-                {(event.contact_name || event.contact_email) && (
-                  <span className="flex items-center gap-1.5">
-                    {/* User Icon */}
-                    <svg className="h-4 w-4 text-zinc-400" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M17.982 18.725A7.488 7.488 0 0012 15.75a7.488 7.488 0 00-5.982 2.975m11.963 0a9 9 0 10-11.963 0m11.963 0A8.966 8.966 0 0112 21a8.966 8.966 0 01-5.982-2.275M15 9.75a3 3 0 11-6 0 3 3 0 016 0z" />
+
+                {/* Metadata Pills Container */}
+                <div className="flex flex-wrap items-center gap-2.5 text-xs">
+                  {event.venue && (
+                    <div className="flex items-center gap-1.5 rounded-xl border border-zinc-200/80 bg-zinc-100/80 px-3 py-1.5 text-zinc-700 backdrop-blur-xs transition-colors dark:border-zinc-800/80 dark:bg-zinc-950/40 dark:text-zinc-300">
+                      <svg className="h-4 w-4 text-indigo-500 dark:text-indigo-400 shrink-0" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M15 10.5a3 3 0 11-6 0 3 3 0 016 0z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z" />
+                      </svg>
+                      <span className="font-semibold text-zinc-700 dark:text-zinc-300">{event.venue}</span>
+                    </div>
+                  )}
+
+                  <div className="flex items-center gap-1.5 rounded-xl border border-zinc-200/80 bg-zinc-100/80 px-3 py-1.5 text-zinc-700 backdrop-blur-xs transition-colors dark:border-zinc-800/80 dark:bg-zinc-950/40 dark:text-zinc-300">
+                    <svg className="h-4 w-4 text-indigo-500 dark:text-indigo-400 shrink-0" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5" />
                     </svg>
-                    {event.contact_name ?? "Organizer"} ({event.contact_email ?? "No Email"})
-                  </span>
-                )}
+                    <span className="font-semibold text-zinc-700 dark:text-zinc-300">
+                      {event.starts_at ? new Date(event.starts_at).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }) : "No Date Scheduled"}
+                    </span>
+                  </div>
+
+                  {(event.contact_name || event.contact_email) && (
+                    <div className="flex items-center gap-1.5 rounded-xl border border-zinc-200/80 bg-zinc-100/80 px-3 py-1.5 text-zinc-700 backdrop-blur-xs transition-colors dark:border-zinc-800/80 dark:bg-zinc-950/40 dark:text-zinc-300">
+                      <svg className="h-4 w-4 text-indigo-500 dark:text-indigo-400 shrink-0" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M17.982 18.725A7.488 7.488 0 0012 15.75a7.488 7.488 0 00-5.982 2.975m11.963 0a9 9 0 10-11.963 0m11.963 0A8.966 8.966 0 0112 21a8.966 8.966 0 01-5.982-2.275M15 9.75a3 3 0 11-6 0 3 3 0 016 0z" />
+                      </svg>
+                      <span className="font-semibold text-zinc-700 dark:text-zinc-300">
+                        {event.contact_name ?? "Organizer"} {event.contact_email ? `(${event.contact_email})` : ""}
+                      </span>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
 
-            {/* Actions Block */}
-            <div className="flex flex-wrap items-center gap-2">
+            {/* Right Column: Actions Block */}
+            <div className="flex flex-wrap items-center gap-2.5 shrink-0 pt-3 lg:pt-0 border-t border-zinc-200/60 lg:border-t-0 dark:border-zinc-800/80">
               <button
                 onClick={() => setIsEditing(true)}
-                className="inline-flex h-10 items-center gap-1.5 rounded-xl border border-zinc-200 bg-white px-4 text-xs font-bold text-zinc-700 transition-colors hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-300 dark:hover:bg-zinc-850"
+                className="inline-flex h-10 items-center gap-2 rounded-xl border border-zinc-200 bg-white/90 px-4 text-xs font-bold text-zinc-700 shadow-xs transition-all hover:bg-zinc-100 hover:border-zinc-300 active:scale-95 dark:border-zinc-800 dark:bg-zinc-950/80 dark:text-zinc-200 dark:hover:bg-zinc-800 dark:hover:border-zinc-700 cursor-pointer"
               >
-                ✏️ Edit Details
+                <svg className="h-4 w-4 text-zinc-500 dark:text-zinc-400" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10" />
+                </svg>
+                <span>Edit Details</span>
               </button>
-              
+
               <Link
                 href={`/admin/events/${eventId}/registrations`}
-                className="inline-flex h-10 items-center gap-1.5 rounded-xl border border-zinc-200 bg-white px-4 text-xs font-bold text-zinc-700 transition-colors hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-300 dark:hover:bg-zinc-850"
+                className="inline-flex h-10 items-center gap-2 rounded-xl border border-zinc-200 bg-white/90 px-4 text-xs font-bold text-zinc-700 shadow-xs transition-all hover:bg-zinc-100 hover:border-zinc-300 active:scale-95 dark:border-zinc-800 dark:bg-zinc-950/80 dark:text-zinc-200 dark:hover:bg-zinc-800 dark:hover:border-zinc-700 cursor-pointer"
               >
-                👥 Registrations ({data.registrations.length})
+                <svg className="h-4 w-4 text-indigo-500 dark:text-indigo-400" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z" />
+                </svg>
+                <span>Registrations</span>
+                <span className="ml-0.5 rounded-full bg-indigo-500/10 px-2 py-0.5 text-[11px] font-black text-indigo-600 dark:bg-indigo-500/20 dark:text-indigo-300">
+                  {data.registrations.length}
+                </span>
               </Link>
 
               <button
                 onClick={handleDelete}
                 disabled={deleting}
-                className="inline-flex h-10 items-center gap-1.5 rounded-xl border border-red-500/20 bg-red-500/5 px-4 text-xs font-bold text-red-600 transition-colors hover:bg-red-500/10 dark:border-red-500/10 dark:text-red-400 dark:hover:bg-red-950/20"
+                className="inline-flex h-10 items-center gap-1.5 rounded-xl border border-red-500/20 bg-red-500/5 px-3.5 text-xs font-bold text-red-600 transition-all hover:bg-red-500/15 hover:border-red-500/30 active:scale-95 disabled:opacity-50 dark:border-red-500/20 dark:text-red-400 dark:hover:bg-red-950/40 cursor-pointer"
               >
-                {deleting ? "Deleting…" : "🗑️ Delete"}
+                <svg className="h-4 w-4 text-red-500 dark:text-red-400" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
+                </svg>
+                <span>{deleting ? "Deleting…" : "Delete"}</span>
               </button>
-              
+
               <button
-                onClick={generate}
+                onClick={() => setShowPlatformModal(true)}
                 disabled={generating}
-                className="inline-flex h-10 items-center gap-2 rounded-xl bg-gradient-to-r from-violet-600 to-indigo-650 px-5 text-xs font-bold text-white shadow-sm transition-all hover:scale-[1.01] hover:shadow-indigo-500/15 disabled:opacity-50 cursor-pointer"
+                className="inline-flex h-10 items-center gap-2 rounded-xl bg-gradient-to-r from-indigo-600 via-purple-600 to-violet-600 px-5 text-xs font-bold text-white shadow-lg shadow-indigo-500/25 transition-all hover:scale-[1.02] hover:shadow-indigo-500/40 hover:from-indigo-500 hover:to-violet-500 active:scale-98 disabled:opacity-50 cursor-pointer dark:shadow-indigo-900/40"
               >
                 {generating ? (
                   <>
                     <span className="h-2 w-2 rounded-full bg-white animate-ping" />
-                    <span>⏳ Campaign generating...</span>
+                    <span>Campaign Generating...</span>
                   </>
                 ) : posts.length > 0 ? (
                   <>
-                    <span>🔄</span> Regenerate Campaign
+                    <svg className="h-4 w-4 text-white" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" />
+                    </svg>
+                    <span>Regenerate Campaign</span>
                   </>
                 ) : (
                   <>
-                    <span>🚀</span> Generate Campaign
+                    <svg className="h-4 w-4 text-white" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 00-2.456 2.456z" />
+                    </svg>
+                    <span>Generate Campaign</span>
                   </>
                 )}
               </button>
@@ -866,8 +992,14 @@ export default function Workspace({ eventId }: { eventId: string }) {
             </svg>
             <p className="mt-4 text-sm font-semibold opacity-70">No campaign generated yet</p>
             <p className="mt-1 text-xs opacity-50">
-              Click &quot;Generate Campaign&quot; in the header card to outline targeted post schedules and RAG parameters.
+              Select your target social media platforms to outline targeted post schedules, captions, and AI graphic prompts.
             </p>
+            <button
+              onClick={() => setShowPlatformModal(true)}
+              className="mt-5 inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 px-5 py-2.5 text-xs font-bold text-white shadow-md hover:from-indigo-500 hover:to-purple-500 transition-all hover:scale-[1.02] cursor-pointer"
+            >
+              📱 Select Platforms & Launch Campaign Generator
+            </button>
           </div>
         )}
 
@@ -883,7 +1015,7 @@ export default function Workspace({ eventId }: { eventId: string }) {
               defaultOpen={true}
               accentColor="blue"
             >
-              <p className="text-sm leading-relaxed text-zinc-600 dark:text-zinc-350">
+              <p className="text-sm leading-relaxed text-zinc-600 dark:text-zinc-300">
                 {campaignPlan.campaignSummary}
               </p>
               
@@ -916,7 +1048,7 @@ export default function Workspace({ eventId }: { eventId: string }) {
                       <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">Campaign Goals</span>
                       <ul className="mt-2.5 space-y-2">
                         {campaignPlan.campaignGoals.map((goal, i) => (
-                          <li key={i} className="flex items-start gap-2 text-sm text-zinc-600 dark:text-zinc-350">
+                          <li key={i} className="flex items-start gap-2 text-sm text-zinc-600 dark:text-zinc-300">
                             <span className="mt-1 text-[8px] text-violet-500">●</span>
                             {goal}
                           </li>
@@ -930,7 +1062,7 @@ export default function Workspace({ eventId }: { eventId: string }) {
                       <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">Key Messages</span>
                       <ul className="mt-2.5 space-y-2">
                         {campaignPlan.keyMessages.map((msg, i) => (
-                          <li key={i} className="flex items-start gap-2 text-sm text-zinc-600 dark:text-zinc-350">
+                          <li key={i} className="flex items-start gap-2 text-sm text-zinc-600 dark:text-zinc-300">
                             <span className="mt-0.5 text-xs text-violet-500">💬</span>
                             {msg}
                           </li>
@@ -955,7 +1087,7 @@ export default function Workspace({ eventId }: { eventId: string }) {
                       key={i}
                       className="rounded-xl border border-zinc-200 bg-white/40 p-4 dark:border-zinc-800 dark:bg-zinc-950/20"
                     >
-                      <h4 className="font-bold text-sm text-zinc-850 dark:text-zinc-150">{ps.platform}</h4>
+                      <h4 className="font-bold text-sm text-zinc-800 dark:text-zinc-200">{ps.platform}</h4>
                       <p className="mt-1.5 text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">
                         {ps.rationale}
                       </p>
@@ -988,7 +1120,7 @@ export default function Workspace({ eventId }: { eventId: string }) {
                       <span className="absolute -left-[31px] top-1 flex h-4 w-4 items-center justify-center rounded-full bg-green-500 ring-4 ring-white dark:ring-zinc-950" />
                       
                       <div>
-                        <h4 className="font-bold text-sm text-zinc-850 dark:text-zinc-150">{phase.name}</h4>
+                        <h4 className="font-bold text-sm text-zinc-800 dark:text-zinc-200">{phase.name}</h4>
                         <span className="mt-1 inline-flex items-center rounded-full bg-green-500/10 px-2 py-0.5 text-[10px] font-bold text-green-600 dark:text-green-400">
                           📅 {phase.dateRange}
                         </span>
@@ -1152,7 +1284,7 @@ export default function Workspace({ eventId }: { eventId: string }) {
 
                           <div className="mt-3">
                             <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">Caption Copy</span>
-                            <p className="mt-1 text-sm leading-relaxed text-zinc-600 dark:text-zinc-350">
+                            <p className="mt-1 text-sm leading-relaxed text-zinc-600 dark:text-zinc-300">
                               {dbPost?.caption ?? post.caption}
                             </p>
                           </div>
@@ -1222,7 +1354,7 @@ export default function Workspace({ eventId }: { eventId: string }) {
               >
                 <ul className="space-y-2">
                   {campaignPlan.engagementStrategy.map((tactic, i) => (
-                    <li key={i} className="flex items-start gap-2 text-sm text-zinc-600 dark:text-zinc-350">
+                    <li key={i} className="flex items-start gap-2 text-sm text-zinc-600 dark:text-zinc-300">
                       <span className="mt-1 text-[8px] text-rose-500">✦</span>
                       {tactic}
                     </li>
@@ -1310,7 +1442,7 @@ export default function Workspace({ eventId }: { eventId: string }) {
               
               {/* Asset list (col-span-5) */}
               <section className="lg:col-span-5 space-y-4">
-                <h3 className="text-sm font-bold uppercase tracking-wider text-zinc-450 dark:text-zinc-500">
+                <h3 className="text-sm font-bold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
                   1 · Choose Visual Asset
                 </h3>
                 
@@ -1325,7 +1457,7 @@ export default function Workspace({ eventId }: { eventId: string }) {
                         className={`group relative overflow-hidden rounded-2xl border-2 text-left transition-all ${
                           selectedImage === post.variant_index
                             ? "border-violet-500 shadow-[0_0_20px_rgba(139,92,246,0.25)] scale-[1.01]"
-                            : "border-zinc-200 dark:border-zinc-800 hover:border-zinc-400 dark:hover:border-zinc-650"
+                            : "border-zinc-200 dark:border-zinc-800 hover:border-zinc-400 dark:hover:border-zinc-700"
                         }`}
                       >
                         {imgUrl ? (
@@ -1355,7 +1487,7 @@ export default function Workspace({ eventId }: { eventId: string }) {
               {/* Caption list (col-span-7) */}
               <section className="lg:col-span-7 space-y-4 flex flex-col justify-between">
                 <div className="space-y-4">
-                  <h3 className="text-sm font-bold uppercase tracking-wider text-zinc-450 dark:text-zinc-500">
+                  <h3 className="text-sm font-bold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
                     2 · Choose Caption Copy
                   </h3>
                   
@@ -1368,7 +1500,7 @@ export default function Workspace({ eventId }: { eventId: string }) {
                         className={`rounded-2xl border-2 p-4 text-left text-sm transition-all focus:outline-none ${
                           selectedCaption === post.variant_index
                             ? "border-indigo-500 bg-indigo-500/[0.02] shadow-[0_0_20px_rgba(99,102,241,0.15)] scale-[1.005]"
-                            : "border-zinc-200 bg-white/30 dark:border-zinc-800 dark:bg-zinc-900/10 hover:border-zinc-350 dark:hover:border-zinc-700"
+                            : "border-zinc-200 bg-white/30 dark:border-zinc-800 dark:bg-zinc-900/10 hover:border-zinc-400 dark:hover:border-zinc-700"
                         }`}
                       >
                         <div className="flex items-center justify-between border-b border-zinc-200/40 dark:border-zinc-800/40 pb-2 mb-2">
@@ -1476,110 +1608,142 @@ export default function Workspace({ eventId }: { eventId: string }) {
 
 
 
-      </main>
-
-      {/* Edit Event Details Modal */}
-      {isEditing && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-2xl rounded-2xl border border-neutral-350 bg-white p-6 shadow-2xl dark:border-neutral-700 dark:bg-neutral-900 animate-fadeIn">
-            <h2 className="text-xl font-bold">Edit Event Details</h2>
-            <form onSubmit={handleSave} className="mt-4 grid gap-4">
-              <div className="grid gap-2">
-                <label className="text-xs font-semibold uppercase opacity-60">Event Title</label>
-                <input
-                  name="title"
-                  required
-                  defaultValue={event.title}
-                  className="rounded-lg border border-neutral-300 bg-transparent px-3 py-2 text-sm focus:border-blue-500 focus:outline-none dark:border-neutral-700"
-                />
-              </div>
-              <div className="grid gap-2">
-                <label className="text-xs font-semibold uppercase opacity-60">Description (Chatbot Knowledge Base)</label>
-                <textarea
-                  name="description"
-                  required
-                  rows={5}
-                  defaultValue={event.description ?? ""}
-                  placeholder="Describe details for chatbot training..."
-                  className="rounded-lg border border-neutral-300 bg-transparent px-3 py-2 text-sm focus:border-blue-500 focus:outline-none dark:border-neutral-700"
-                />
-              </div>
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div className="grid gap-2">
-                  <label className="text-xs font-semibold uppercase opacity-60">Starts At</label>
-                  <input
-                    name="starts_at"
-                    type="datetime-local"
-                    defaultValue={event.starts_at ? new Date(event.starts_at).toISOString().slice(0, 16) : ""}
-                    className="rounded-lg border border-neutral-300 bg-transparent px-3 py-2 text-sm focus:border-blue-500 focus:outline-none dark:border-neutral-700"
-                  />
+        {/* Social Media Platforms Selector Modal */}
+        {showPlatformModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-md animate-fadeIn">
+            <div className="relative w-full max-w-2xl overflow-hidden rounded-3xl border border-zinc-200 bg-white p-6 shadow-2xl transition-all dark:border-zinc-800 dark:bg-zinc-900 sm:p-7">
+              {/* Top Accent line */}
+              <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500" />
+              
+              <div className="flex items-start justify-between border-b border-zinc-200/60 pb-4 dark:border-zinc-800">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xl">📱</span>
+                    <h3 className="text-xl font-extrabold tracking-tight text-zinc-900 dark:text-zinc-50">
+                      Select Target Social Media Platforms
+                    </h3>
+                  </div>
+                  <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+                    Choose which channels you want to target for this event campaign. AI will tailor post sequence, frequency, format, and captions specifically for your selected platforms.
+                  </p>
                 </div>
-                <div className="grid gap-2">
-                  <label className="text-xs font-semibold uppercase opacity-60">Venue</label>
-                  <input
-                    name="venue"
-                    defaultValue={event.venue ?? ""}
-                    className="rounded-lg border border-neutral-300 bg-transparent px-3 py-2 text-sm focus:border-blue-500 focus:outline-none dark:border-neutral-700"
-                  />
-                </div>
-                <div className="grid gap-2">
-                  <label className="text-xs font-semibold uppercase opacity-60">Contact Name</label>
-                  <input
-                    name="contact_name"
-                    defaultValue={event.contact_name ?? ""}
-                    className="rounded-lg border border-neutral-300 bg-transparent px-3 py-2 text-sm focus:border-blue-500 focus:outline-none dark:border-neutral-700"
-                  />
-                </div>
-                <div className="grid gap-2">
-                  <label className="text-xs font-semibold uppercase opacity-60">Contact Email</label>
-                  <input
-                    name="contact_email"
-                    type="email"
-                    defaultValue={event.contact_email ?? ""}
-                    className="rounded-lg border border-neutral-300 bg-transparent px-3 py-2 text-sm focus:border-blue-500 focus:outline-none dark:border-neutral-700"
-                  />
-                </div>
-                <div className="grid gap-2 sm:col-span-2">
-                  <label className="text-xs font-semibold uppercase opacity-60">Contact Phone</label>
-                  <input
-                    name="contact_phone"
-                    defaultValue={event.contact_phone ?? ""}
-                    className="rounded-lg border border-neutral-300 bg-transparent px-3 py-2 text-sm focus:border-blue-500 focus:outline-none dark:border-neutral-700"
-                  />
-                </div>
-                <div className="grid gap-2 sm:col-span-2">
-                  <label className="text-xs font-semibold uppercase opacity-60">WhatsApp Invite Lead Days (days before event to send invitations)</label>
-                  <input
-                    name="invite_lead_days"
-                    type="number"
-                    min="0"
-                    max="90"
-                    required
-                    defaultValue={event.invite_lead_days ?? 7}
-                    className="rounded-lg border border-neutral-300 bg-transparent px-3 py-2 text-sm focus:border-blue-500 focus:outline-none dark:border-neutral-700"
-                  />
-                </div>
-              </div>
-              <div className="mt-4 flex justify-end gap-3 border-t border-neutral-200 dark:border-neutral-700 pt-4">
                 <button
                   type="button"
-                  onClick={() => setIsEditing(false)}
-                  className="rounded-lg border border-neutral-300 px-4 py-2 text-sm font-semibold hover:bg-neutral-50 dark:border-neutral-700 dark:hover:bg-neutral-800"
+                  onClick={() => setShowPlatformModal(false)}
+                  className="rounded-xl p-1.5 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-800 dark:hover:text-zinc-200 transition-colors"
+                >
+                  ✕
+                </button>
+              </div>
+
+              {/* Quick Action Bar & Counter */}
+              <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-zinc-100/70 p-3 backdrop-blur-xs dark:bg-zinc-950/40 border border-zinc-200/60 dark:border-zinc-800/60">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-bold text-zinc-700 dark:text-zinc-300">
+                    Selected Platforms:
+                  </span>
+                  <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-black ${
+                    selectedPlatforms.length > 0
+                      ? "bg-indigo-500/10 text-indigo-600 dark:bg-indigo-500/20 dark:text-indigo-400"
+                      : "bg-red-500/10 text-red-600 dark:bg-red-500/20 dark:text-red-400"
+                  }`}>
+                    {selectedPlatforms.length} of {POPULAR_PLATFORMS.length} Selected
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleSelectAllPlatforms}
+                    className="rounded-lg px-2.5 py-1 text-xs font-bold text-indigo-600 hover:bg-indigo-500/10 dark:text-indigo-400 dark:hover:bg-indigo-500/20 transition-colors cursor-pointer"
+                  >
+                    Select All
+                  </button>
+                  <span className="text-zinc-300 dark:text-zinc-700">|</span>
+                  <button
+                    type="button"
+                    onClick={handleClearAllPlatforms}
+                    className="rounded-lg px-2.5 py-1 text-xs font-bold text-zinc-500 hover:bg-zinc-200 dark:text-zinc-400 dark:hover:bg-zinc-800 transition-colors cursor-pointer"
+                  >
+                    Clear All
+                  </button>
+                </div>
+              </div>
+
+              {/* Validation Error Message */}
+              {platformError && (
+                <div className="mt-3 rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-xs font-bold text-red-600 dark:text-red-400 flex items-center gap-2">
+                  <span>⚠️</span>
+                  <span>{platformError}</span>
+                </div>
+              )}
+
+              {/* Platforms Grid */}
+              <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[320px] overflow-y-auto pr-1">
+                {POPULAR_PLATFORMS.map((platform) => {
+                  const isSelected = selectedPlatforms.includes(platform.id);
+                  return (
+                    <div
+                      key={platform.id}
+                      onClick={() => togglePlatform(platform.id)}
+                      className={`group relative flex cursor-pointer items-start gap-3 rounded-2xl border-2 p-3.5 transition-all duration-200 ${
+                        isSelected
+                          ? "border-indigo-500 bg-indigo-500/10 shadow-xs dark:bg-indigo-500/15 dark:border-indigo-500/60"
+                          : "border-zinc-200 bg-zinc-50/50 hover:border-zinc-300 dark:border-zinc-800 dark:bg-zinc-950/30 dark:hover:border-zinc-700"
+                      }`}
+                    >
+                      <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-md border border-zinc-300 dark:border-zinc-700 mt-0.5 transition-colors">
+                        {isSelected && (
+                          <span className="h-3.5 w-3.5 rounded-xs bg-indigo-600 dark:bg-indigo-500 flex items-center justify-center text-[10px] text-white font-bold">
+                            ✓
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-base">{platform.icon}</span>
+                          <span className="font-bold text-sm text-zinc-900 dark:text-zinc-100">
+                            {platform.name}
+                          </span>
+                          <span className="ml-auto rounded-full bg-zinc-200/60 px-2 py-0.5 text-[9px] font-bold text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400">
+                            {platform.badge}
+                          </span>
+                        </div>
+                        <p className="mt-1 text-[11px] text-zinc-500 dark:text-zinc-400 leading-tight">
+                          {platform.description}
+                        </p>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Modal Footer Actions */}
+              <div className="mt-6 flex items-center justify-end gap-3 border-t border-zinc-200/60 pt-4 dark:border-zinc-800">
+                <button
+                  type="button"
+                  onClick={() => setShowPlatformModal(false)}
+                  className="rounded-xl border border-zinc-200 px-4 py-2.5 text-xs font-bold text-zinc-600 hover:bg-zinc-100 dark:border-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-800 transition-colors cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
-                  type="submit"
-                  disabled={saving}
-                  className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-500 disabled:opacity-50"
+                  type="button"
+                  onClick={handleLaunchCampaignWithValidation}
+                  disabled={selectedPlatforms.length === 0}
+                  className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-indigo-600 via-purple-600 to-violet-600 px-5 py-2.5 text-xs font-bold text-white shadow-lg shadow-indigo-500/25 transition-all hover:scale-[1.02] hover:shadow-indigo-500/40 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
                 >
-                  {saving ? "Saving Changes…" : "Save Changes"}
+                  <span>🚀 Launch AI Campaign Generation</span>
+                  <span className="rounded-full bg-white/20 px-2 py-0.5 text-[10px] font-black text-white">
+                    {selectedPlatforms.length} Channels
+                  </span>
                 </button>
               </div>
-            </form>
+            </div>
           </div>
-        </div>
-      )}
+        )}
+      </main>
     </div>
   );
 }
@@ -1635,7 +1799,7 @@ function ChosenPost({ post, onSaved }: { post: Post; onSaved: () => void }) {
 
   return (
     <section className="mt-8 rounded-2xl border border-indigo-500/30 bg-indigo-500/[0.01] p-6 shadow-sm">
-      <h3 className="text-sm font-bold uppercase tracking-wider text-indigo-650 dark:text-indigo-400 mb-4">
+      <h3 className="text-sm font-bold uppercase tracking-wider text-indigo-600 dark:text-indigo-400 mb-4">
         3 · Schedule Dispatch
       </h3>
       
@@ -1643,7 +1807,7 @@ function ChosenPost({ post, onSaved }: { post: Post; onSaved: () => void }) {
         {/* Mock Post Composer image */}
         {post.image_url && (
           <div className="w-full lg:w-48 shrink-0 flex flex-col gap-2">
-            <div className="overflow-hidden rounded-xl border border-zinc-200 dark:border-zinc-800 shadow-sm bg-zinc-150">
+            <div className="overflow-hidden rounded-xl border border-zinc-200 dark:border-zinc-800 shadow-sm bg-zinc-100">
               <img
                 src={post.image_url}
                 alt="Chosen"
@@ -1655,7 +1819,7 @@ function ChosenPost({ post, onSaved }: { post: Post; onSaved: () => void }) {
         )}
         
         {/* Mock Composer Panel */}
-        <div className="flex-1 rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-850 dark:bg-zinc-950/60 shadow-sm flex flex-col justify-between">
+        <div className="flex-1 rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-950/60 shadow-sm flex flex-col justify-between">
           <div>
             {/* mock header profile */}
             <div className="flex items-center gap-2 mb-3">

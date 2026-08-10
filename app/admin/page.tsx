@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import useSWR from "swr";
+import { InteractiveEventDatePicker } from "@/components/interactive-event-date-picker";
 
 interface EventRow {
   id: string;
@@ -169,7 +170,7 @@ export default function AdminPage() {
             <div className="rounded-2xl border border-zinc-200/80 bg-white/70 p-6 shadow-xl backdrop-blur-md transition-colors duration-300 dark:border-zinc-800/80 dark:bg-zinc-900/40">
               <h2 className="text-lg font-bold text-zinc-900 dark:text-zinc-50">New Event Setup</h2>
               <p className="mt-1 text-xs text-zinc-400 dark:text-zinc-550">
-                Register a new event. The description acts as the chatbot's primary training base.
+                Register a new event. The description acts as the chatbot&apos;s primary training base.
               </p>
               
               <form action={createEvent} className="mt-6 grid gap-4">
@@ -237,11 +238,7 @@ export default function AdminPage() {
                 <div className="grid gap-4 sm:grid-cols-2">
                   <div className="grid gap-1.5">
                     <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">Starts At</label>
-                    <input
-                      name="starts_at"
-                      type="datetime-local"
-                      className="rounded-xl border border-zinc-200/80 bg-white/50 px-3.5 py-2 text-sm transition-all focus:border-indigo-500 focus:outline-none dark:border-zinc-800 dark:bg-zinc-950/50"
-                    />
+                    <InteractiveEventDatePicker name="starts_at" />
                   </div>
 
                   <div className="grid gap-1.5">

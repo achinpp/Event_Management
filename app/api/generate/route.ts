@@ -102,8 +102,19 @@ export async function POST(req: Request) {
 
   const body = await req.json().catch(() => null);
   const eventId: string | undefined = body?.eventId;
+  const targetPlatforms: string[] = Array.isArray(body?.targetPlatforms) && body.targetPlatforms.length > 0
+    ? body.targetPlatforms
+    : [];
+
   if (!eventId) {
     return NextResponse.json({ error: "eventId is required" }, { status: 400 });
+  }
+
+  if (targetPlatforms.length === 0) {
+    return NextResponse.json(
+      { error: "Please select at least one social media platform before generating your campaign." },
+      { status: 400 }
+    );
   }
 
   const db = supabaseAdmin();
@@ -121,8 +132,6 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-
-
   // ── AI-powered campaign plan generation ───────────────────────────────
 
   const prompt = `You are an expert social media campaign strategist for events.
@@ -130,7 +139,13 @@ Generate a COMPREHENSIVE social media campaign plan for this event:
 
 ${eventFacts(event)}
 
+TARGET SOCIAL MEDIA PLATFORMS:
+The user has explicitly selected the following target social media platforms for this campaign:
+${targetPlatforms.map((p) => `- ${p}`).join("\n")}
+
 IMPORTANT RULES:
+- ONLY generate platform strategies and posts tailored specifically for these selected target platforms: ${targetPlatforms.join(", ")}
+- Ensure each post sequence item specifies one of the selected target platforms (${targetPlatforms.join(", ")}) in its "platform" field
 - Generate between 5 and 7 posts in postSequence, covering the FULL event lifecycle: teaser/save-the-date, announcement, early bird/registration, speaker/agenda highlights, countdown, event day/live coverage, post-event recap/thank you
 - Decide the exact number of posts based on the event size, type, and complexity
 - All content must be specific to THIS event — use the event title, venue, date, and description in captions
@@ -143,7 +158,13 @@ IMPORTANT RULES:
   let campaignPlan: z.infer<typeof campaignPlanSchema>;
   try {
     if (process.env.DEMO_MODE === "true") {
-      campaignPlan = demoCampaignPlan;
+      campaignPlan = JSON.parse(JSON.stringify(demoCampaignPlan));
+      if (targetPlatforms.length > 0 && campaignPlan.postSequence) {
+        campaignPlan.postSequence = campaignPlan.postSequence.map((post, idx) => ({
+          ...post,
+          platform: targetPlatforms[idx % targetPlatforms.length],
+        }));
+      }
     } else {
       const result = await generateObject({
         model: google(CAMPAIGN_MODEL),
