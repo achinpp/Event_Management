@@ -184,7 +184,7 @@ export default function Workspace({ eventId }: { eventId: string }) {
   const [isQueueRunning, setIsQueueRunning] = useState(false);
   const [queueIndex, setQueueIndex] = useState<number | null>(null);
   const [savingAllPairs, setSavingAllPairs] = useState(false);
-  const [refreshKey, setRefreshKey] = useState(Date.now());
+  const [refreshKey, setRefreshKey] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [imageGenStatus, setImageGenStatus] = useState<Record<number, string>>({});
   const [selectedImage, setSelectedImage] = useState<number | null>(null);
@@ -466,35 +466,32 @@ export default function Workspace({ eventId }: { eventId: string }) {
     console.log(`[🎨 Single Image] Post ID: ${post.id}`);
     console.log(`[🎨 Single Image] Brief: "${imageBrief.substring(0, 100)}..."`);
 
-    const itemStart = Date.now();
     try {
       const res = await fetch(`/api/posts/${post.id}/generate-image`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ imageBrief }),
       });
-      const elapsed = ((Date.now() - itemStart) / 1000).toFixed(1);
 
       if (!res.ok) {
         const payload = await res.json().catch(() => null);
-        console.error(`[🎨 Single Image] ❌ FAILED (${res.status}) after ${elapsed}s:`, payload?.error);
+        console.error(`[🎨 Single Image] ❌ FAILED (${res.status}):`, payload?.error);
         setError(payload?.error ?? "Image generation failed");
         setImageGenStatus(prev => ({ ...prev, [postIndex]: `failed: ${payload?.error ?? res.status}` }));
       } else {
         const payload = await res.json().catch(() => null);
         const isDataUri = payload?.imageUrl?.startsWith("data:");
-        console.log(`[🎨 Single Image] ✅ OK in ${elapsed}s — ${isDataUri ? "Data URI (storage fallback)" : "Storage URL"}`);
+        console.log(`[🎨 Single Image] ✅ OK — ${isDataUri ? "Data URI (storage fallback)" : "Storage URL"}`);
         setImageGenStatus(prev => ({ ...prev, [postIndex]: isDataUri ? "done (data-uri)" : "done" }));
       }
     } catch (err) {
-      const elapsed = ((Date.now() - itemStart) / 1000).toFixed(1);
-      console.error(`[🎨 Single Image] ❌ NETWORK ERROR after ${elapsed}s:`, err);
+      console.error(`[🎨 Single Image] ❌ NETWORK ERROR:`, err);
       setError("Network error during image generation");
       setImageGenStatus(prev => ({ ...prev, [postIndex]: "network-error" }));
     }
 
     setBusyImageIndex(null);
-    setRefreshKey(Date.now());
+    setRefreshKey((prev) => prev + 1);
     await mutate();
   }
 
@@ -1841,11 +1838,16 @@ function ChosenPost({ post, onSaved }: { post: Post; onSaved: () => void }) {
             
             <div className="mt-2.5 flex flex-wrap items-center justify-between gap-3">
               <button
+                type="button"
                 onClick={saveCaption}
                 disabled={!dirty || busy !== null}
-                className="rounded-lg bg-indigo-600 px-3.5 py-1.5 text-xs font-bold text-white hover:bg-indigo-500 disabled:opacity-40"
+                className={`rounded-xl px-4 py-2 text-xs font-extrabold tracking-wide transition-all shadow-md ${
+                  !dirty || busy !== null
+                    ? "border border-zinc-200 bg-zinc-100/80 text-zinc-400 dark:border-zinc-800 dark:bg-zinc-800/80 dark:text-zinc-400 cursor-not-allowed shadow-none"
+                    : "bg-gradient-to-r from-indigo-500 via-purple-500 to-violet-600 text-white shadow-indigo-500/25 hover:from-indigo-400 hover:to-violet-500 hover:shadow-indigo-500/40 hover:scale-[1.02] active:scale-98 cursor-pointer"
+                }`}
               >
-                {busy === "caption" ? "Saving…" : "Save Edited Caption"}
+                {busy === "caption" ? "⏳ Saving…" : "💾 Save Edited Caption"}
               </button>
               {post.hashtags.length > 0 && (
                 <span className="text-xs font-semibold text-indigo-500 dark:text-indigo-400">
@@ -1856,27 +1858,30 @@ function ChosenPost({ post, onSaved }: { post: Post; onSaved: () => void }) {
           </div>
           
           <div className="mt-5 flex flex-wrap items-center gap-3 border-t border-zinc-200/50 pt-4 dark:border-zinc-800/50 text-xs">
-            <div className="grid gap-1">
+            <div className="grid gap-1 min-w-[260px] flex-1">
               <span className="text-[9px] font-bold uppercase tracking-wider text-zinc-400">Dispatch Time</span>
-              <input
-                type="datetime-local"
+              <InteractiveEventDatePicker
                 value={dueAt}
-                onChange={(e) => setDueAt(e.target.value)}
-                className="rounded-lg border border-zinc-200 bg-transparent px-3 py-1.5 text-xs focus:border-indigo-500 focus:outline-none dark:border-zinc-800"
+                onChange={(val) => setDueAt(val ?? "")}
               />
               {post.scheduled_at && (
-                <span className="text-[9px] text-amber-600 dark:text-amber-400 font-medium">
+                <span className="text-[9px] text-amber-600 dark:text-amber-400 font-medium mt-0.5">
                   💡 Auto-suggested: {new Date(post.scheduled_at).toLocaleString()}
                 </span>
               )}
             </div>
             
             <button
+              type="button"
               onClick={schedule}
               disabled={!dueAt || busy !== null}
-              className="mt-4 rounded-lg bg-gradient-to-r from-violet-650 to-indigo-650 px-4 py-2 text-xs font-bold text-white hover:scale-[1.01] disabled:opacity-40"
+              className={`rounded-xl px-5 py-2.5 text-xs font-extrabold tracking-wide transition-all shadow-md ${
+                !dueAt || busy !== null
+                  ? "border border-zinc-200 bg-zinc-100/80 text-zinc-400 dark:border-zinc-800 dark:bg-zinc-800/80 dark:text-zinc-400 cursor-not-allowed shadow-none"
+                  : "bg-gradient-to-r from-violet-600 via-indigo-600 to-purple-600 text-white shadow-indigo-500/25 hover:from-violet-500 hover:to-indigo-500 hover:shadow-indigo-500/40 hover:scale-[1.02] active:scale-98 cursor-pointer"
+              }`}
             >
-              {busy === "schedule" ? "Scheduling…" : "Schedule with Buffer"}
+              {busy === "schedule" ? "⏳ Scheduling…" : "🚀 Schedule with Buffer"}
             </button>
             
             {post.scheduled_at && post.status === "scheduled" && (
