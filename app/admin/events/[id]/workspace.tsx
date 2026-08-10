@@ -700,19 +700,19 @@ export default function Workspace({ eventId }: { eventId: string }) {
                 </div>
 
                 <div className="grid gap-4 sm:grid-cols-2">
-                  <div className="grid gap-1.5">
+                  <div className="grid gap-1.5 min-w-0">
                     <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">Starts At</label>
                     <InteractiveEventDatePicker
                       name="starts_at"
                       defaultValue={event.starts_at ? new Date(event.starts_at).toISOString() : undefined}
                     />
                   </div>
-                  <div className="grid gap-1.5">
+                  <div className="grid gap-1.5 min-w-0">
                     <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">Venue</label>
                     <input
                       name="venue"
                       defaultValue={event.venue ?? ""}
-                      className="rounded-xl border border-zinc-200/80 bg-white/50 px-3.5 py-2 text-sm transition-all focus:border-indigo-500 focus:outline-none dark:border-zinc-800 dark:bg-zinc-950/50"
+                      className="rounded-xl border border-zinc-200/80 bg-white/50 px-3.5 py-2 text-sm transition-all focus:border-indigo-500 focus:outline-none dark:border-zinc-800 dark:bg-zinc-950/50 min-w-0"
                     />
                   </div>
                 </div>

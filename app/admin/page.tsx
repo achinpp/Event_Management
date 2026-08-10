@@ -236,17 +236,17 @@ export default function AdminPage() {
                 </div>
 
                 <div className="grid gap-4 sm:grid-cols-2">
-                  <div className="grid gap-1.5">
+                  <div className="grid gap-1.5 min-w-0">
                     <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">Starts At</label>
                     <InteractiveEventDatePicker name="starts_at" />
                   </div>
 
-                  <div className="grid gap-1.5">
+                  <div className="grid gap-1.5 min-w-0">
                     <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">Venue</label>
                     <input
                       name="venue"
                       placeholder="e.g. Grand Hall, Colombo"
-                      className="rounded-xl border border-zinc-200/80 bg-white/50 px-3.5 py-2 text-sm transition-all focus:border-indigo-500 focus:outline-none dark:border-zinc-800 dark:bg-zinc-950/50"
+                      className="rounded-xl border border-zinc-200/80 bg-white/50 px-3.5 py-2 text-sm transition-all focus:border-indigo-500 focus:outline-none dark:border-zinc-800 dark:bg-zinc-950/50 min-w-0"
                     />
                   </div>
                 </div>
