@@ -1,0 +1,23 @@
+version: '3.8'
+
+services:
+  eventpilot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: eventpilot:latest
+    container_name: eventpilot-web
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env.local
+    environment:
+      - NODE_ENV=production
+    # If your Penpot instance is on a specific Docker network, you can attach this container to it here
+    # networks:
+    #   - penpot_network
+
+# networks:
+#   penpot_network:
+#     external: true

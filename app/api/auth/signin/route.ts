@@ -41,7 +41,7 @@ export async function POST(req: Request) {
     // Store the access token in a secure HttpOnly cookie
     res.cookies.set("ep_session", data.session.access_token, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
+      secure: process.env.NEXT_PUBLIC_APP_URL?.startsWith("https://") || false,
       sameSite: "lax",
       path: "/",
       maxAge: data.session.expires_in,
